@@ -6,6 +6,8 @@ Criar uma plataforma por assinatura para pequenos vendedores entenderem
 vendas, margem, custos, estoque e recebimentos em vários canais.
 Piloto inicial: loja Uzemy na Nuvemshop.
 Expansão prevista: Mercado Livre, Shopee e SHEIN, por etapas.
+Publicidade é parte do núcleo: Nuvemshop + Meta Ads no primeiro piloto
+integrado; Google Ads, TikTok Ads e mídia dos marketplaces na expansão.
 Nome do produto provisório.
 
 ESTADO ATUAL
@@ -62,6 +64,14 @@ Painel responsivo + API autenticada + PostgreSQL.
 Empresas, usuários e permissões separados.
 Adaptadores por canal; nenhuma regra de integração dentro do núcleo financeiro.
 Sincronização histórica e incremental, fila, tentativas e deduplicação.
+Conectores de publicidade independentes dos conectores de venda.
+Dados de campanhas, anúncios, criativos e gasto diário por conta.
+Vínculo com pedidos por UTMs e identificadores disponíveis, com cobertura
+de atribuição visível e pedidos sem vínculo mantidos explicitamente.
+Não somar conversões declaradas por mídias diferentes como vendas únicas.
+Separar ROAS da mídia, receita dos pedidos vinculados por gasto, margem
+após publicidade, custo por compra e eficiência total do marketing.
+Evitar duplicar gasto importado de Ads com despesas inseridas manualmente.
 Cadastro central de SKU ligado a ofertas/variações em cada canal.
 Custos versionados com vigência e snapshot em cada item de pedido.
 Eventos financeiros e trilha de auditoria para explicar correções.
@@ -83,6 +93,8 @@ Confirmar o meio de pagamento (Nuvem Pago é apenas hipótese).
 Confirmar custos por SKU, fretes, impostos, embalagem e cashback.
 Registrar app Nuvemshop e autorizar leitura pelo fluxo oficial.
 Implementar backend, segredo por instalação e armazenamento persistente.
+Autorizar leitura do Meta Ads e importar gasto diário junto aos pedidos.
+Conferir UTMs, identificadores e vínculo entre campanha e pedido.
 Sincronizar uma amostra acordada de pedidos e confrontar com exportações
 da loja e extratos de pagamento.
 Testar duplicação, atrasos, expiração/revogação de acesso e reprocessamento.
@@ -103,3 +115,7 @@ Referência de propósito: https://www.escalafy.com/analitica
 Autorização Nuvemshop:
 https://tiendanube.github.io/api-documentation/authentication
 Portal SHEIN: https://open.sheincorp.com/
+Relatórios Google Ads:
+https://developers.google.com/google-ads/api/docs/conversions/reporting
+Atribuição TikTok:
+https://ads.tiktok.com/resources/help/article/about-attribution-analytics?lang=en-gb

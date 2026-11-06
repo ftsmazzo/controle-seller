@@ -1,0 +1,71 @@
+PUBLICIDADE E ATRIBUIÇÃO — EXTENSÃO PLANEJADA DA BASE
+Complementa a proposta inicial de schema. Não aplicado a um banco.
+Nenhuma API ou conta de publicidade está conectada ao protótipo.
+
+MARCO INICIAL
+Nuvemshop + Meta Ads + custos vigentes por SKU.
+Google Ads, TikTok Ads e publicidade dos marketplaces entram por etapas,
+após verificar elegibilidade, autorização e dados das contas reais.
+Mercado Ads e Shopee Ads são candidatos. Dados publicitários da SHEIN
+precisam de validação própria e não são garantidos pelo conector de vendas.
+
+ENTIDADES A MODELAR NO BACKEND
+- Contas publicitárias: empresa, plataforma, ID externo, moeda, fuso,
+  autorizações e referência de segredo; separadas das contas de venda.
+- Campanhas, grupos/conjuntos, anúncios e referências de criativos.
+  Armazenar apenas as dimensões disponíveis na respectiva API.
+- Fatos diários de gasto e desempenho: conta, dia no fuso de origem,
+  entidade/dimensões do relatório, moeda, gasto, impressões e cliques.
+  Chave única por granularidade, segmento e origem; não somar gasto
+  de conta, campanha e anúncio como se fossem investimentos diferentes.
+- Conversões declaradas pela mídia: ação, valor, modelo, janela,
+  data-base do relatório, data de atualização e origem.
+  Contagens podem ser fracionárias e devem ficar separadas de pedidos.
+- Pontos de contato de primeira parte: UTMs, identificadores disponíveis,
+  horário e referência pseudonimizada da sessão.
+- Vínculos pedido/campanha: empresa, pedido, ponto de contato, modelo
+  versionado, janela, peso e evidência; registrar a qualidade do vínculo.
+  Em uma visão/modelo, a soma de pesos de um pedido não pode exceder 1.
+- Custos publicitários importados: referência ao fato de origem,
+  competência e conciliação com o lançamento gerencial, sem duplicação.
+
+REGRAS PARA O CRUZAMENTO
+- Pedidos realizados são a base das vendas; não somar conversões
+  autodeclaradas de mídias diferentes como novos pedidos.
+- Preservar a leitura de cada plataforma para comparações auditáveis.
+- Não inferir vínculo individual somente porque a data ou valor coincide.
+- Exibir cobertura da atribuição e pedidos não atribuídos.
+- Preservar custos por vigência e snapshots dos pedidos.
+- Tratar devoluções e estornos na receita atribuída e mostrar correções.
+- Definir moeda e fuso antes de comparar relatórios e custos.
+- Datas de interação, compra e recebimento têm propósitos diferentes.
+- Reconsultar dias anteriores para absorver conversões e correções tardias.
+- A ausência de uma linha de relatório não comprova gasto zero.
+- Distinguir métricas confirmadas, estimadas, ausentes e atrasadas.
+
+INDICADORES PLANEJADOS
+- ROAS declarado pela mídia, respeitando sua definição e janela.
+- Receita líquida atribuída de pedidos / gasto, com modelo explícito.
+- Margem de contribuição dos pedidos atribuídos menos gasto publicitário;
+  é uma leitura gerencial atribuída, não prova causal de incrementalidade.
+- Custo por compra e por novo cliente, com definição de primeira compra
+  e identificação confiável de cliente; não tratar recompra como aquisição.
+- Receita total da loja / gasto total de marketing, incluindo orgânico
+  e pedidos sem vínculo; não chamar isso de ROAS individual da campanha.
+- Comparação de campanhas, criativos e produtos quando as dimensões
+  e os vínculos necessários estiverem disponíveis.
+
+RASTREAMENTO E AÇÕES FUTURAS
+Leitura de Ads, atribuição própria e envio de eventos são camadas distintas.
+Planejar pixel e eventos de navegador/servidor com identificador estável,
+deduplicação, preferências de privacidade e registro do envio.
+Não prometer recuperar ou atribuir 100% das vendas.
+Começar em leitura e recomendações; alterações de orçamento e pausa
+de campanhas não fazem parte do piloto.
+
+VALIDAÇÃO ANTES DE DADOS REAIS
+Revisar schema, permissões e isolamento entre empresas.
+Testar repetição de importação sem duplicar gasto, relatórios sobrepostos,
+fusos diferentes, duas mídias reclamando o mesmo pedido, estorno posterior,
+custos incompletos, expiração de acesso e dados atrasados.
+Conferir gasto contra gerenciador e receita contra amostra real da loja.
