@@ -1,0 +1,105 @@
+CONTROLE SELLER — PILOTO UZEMY
+Versão 0.1 — 5 de novembro de 2026
+
+OBJETIVO
+Criar uma plataforma por assinatura para pequenos vendedores entenderem
+vendas, margem, custos, estoque e recebimentos em vários canais.
+Piloto inicial: loja Uzemy na Nuvemshop.
+Expansão prevista: Mercado Livre, Shopee e SHEIN, por etapas.
+Nome do produto provisório.
+
+ESTADO ATUAL
+Protótipo navegável, núcleo financeiro em JavaScript e testes automatizados.
+Todos os pedidos, custos, taxas, variações, SKUs, quantidades de estoque,
+despesas e recebimentos exibidos são fictícios.
+Nomes e preços de alguns produtos usam a vitrine pública como referência.
+Não há conexão com a loja, login próprio, banco provisionado, integração
+de marketplace ou cobrança de assinatura.
+O acesso privado da hospedagem protege a visualização, mas não implementa
+o sistema de contas e permissões da futura plataforma.
+Alterações da demonstração ficam no armazenamento local do navegador.
+Evitar inserir dados reais: este ambiente não é o sistema de produção.
+
+EXECUTAR LOCALMENTE
+Requer Node.js com suporte a ES Modules e node:test.
+Na pasta deste projeto:
+  node --test tests/finance.test.mjs
+  node preview.mjs
+Abrir o endereço exibido pelo servidor, normalmente:
+  http://127.0.0.1:4173
+O projeto não exige instalação de dependências.
+
+FLUXO DE VALIDAÇÃO
+1. Abrir Visão geral e conferir a identificação de dados fictícios.
+2. Abrir Produtos e estoque e informar um custo para Ecobag My.
+3. Voltar à Visão geral: o resultado e a margem passam a ser calculados.
+4. Abrir um pedido e conferir cada parcela do cálculo.
+5. Alterar canal e período para conferir a separação dos resultados.
+6. Em Custos e preço, simular um preço e registrar uma despesa fictícia.
+7. Exportar os pedidos em CSV.
+8. Abrir Recebimentos: os prazos e percentuais são uma simulação arbitrária.
+9. Consultar Integrações e Plano do produto.
+10. Restaurar a base no Plano do produto se quiser desfazer alterações.
+
+CRITÉRIOS FINANCEIROS DO PROTÓTIPO
+Valores monetários são inteiros em centavos de real.
+Custo ausente é desconhecido, nunca zero.
+Receita líquida: produtos - descontos + frete cobrado - estornos.
+Contribuição: receita líquida - mercadoria consumida - taxas - frete pago
+  - impostos - embalagem - cashback provisionado.
+Resultado gerencial: contribuição - publicidade - despesas operacionais.
+Pedidos pendentes não entram no realizado.
+Cancelamentos podem reter custos efetivamente incorridos.
+Devoluções restauram custo da mercadoria somente para unidades
+explicitamente devolvidas ao estoque; taxas não são revertidas por inferência.
+A tela de recebimentos é uma ilustração separada e não mede saldo bancário.
+O simulador de preço considera percentuais incidentes sobre o preço final.
+Ele não reproduz automaticamente tabelas de comissões dos marketplaces.
+O CSV usa ponto e vírgula, valores brasileiros e marca os dados como fictícios.
+
+ARQUITETURA PROPOSTA
+Painel responsivo + API autenticada + PostgreSQL.
+Empresas, usuários e permissões separados.
+Adaptadores por canal; nenhuma regra de integração dentro do núcleo financeiro.
+Sincronização histórica e incremental, fila, tentativas e deduplicação.
+Cadastro central de SKU ligado a ofertas/variações em cada canal.
+Custos versionados com vigência e snapshot em cada item de pedido.
+Eventos financeiros e trilha de auditoria para explicar correções.
+Recebimentos e alocações por pedido para conciliação.
+Provedor de pagamento separado da plataforma de vendas.
+Assinaturas e controle de planos serão implementados após validar o piloto.
+
+DATABASE/001_PROPOSED_SCHEMA.SQL
+Proposta inicial de schema PostgreSQL; não foi aplicada nem validada
+em um servidor PostgreSQL neste trabalho. Não é uma migração pronta
+para produção. Inclui chaves compostas por empresa e proposta de RLS.
+Antes de adotar: testar a migração, autenticação, permissões, isolamento,
+imutabilidade de eventos, restauração e cenário de custo histórico.
+O tenant deve ser definido por backend confiável após validar a membership.
+O cliente nunca recebe uma conexão de banco nem escolhe esse contexto.
+
+PRÓXIMO MARCO: PILOTO REAL
+Confirmar o meio de pagamento (Nuvem Pago é apenas hipótese).
+Confirmar custos por SKU, fretes, impostos, embalagem e cashback.
+Registrar app Nuvemshop e autorizar leitura pelo fluxo oficial.
+Implementar backend, segredo por instalação e armazenamento persistente.
+Sincronizar uma amostra acordada de pedidos e confrontar com exportações
+da loja e extratos de pagamento.
+Testar duplicação, atrasos, expiração/revogação de acesso e reprocessamento.
+Só depois expandir o piloto e ativar assinatura para clientes.
+Prioridade entre Mercado Livre, Shopee e SHEIN será definida por acesso
+disponível e principal necessidade da operação.
+
+ACESSOS A CONFIRMAR MAIS ADIANTE
+Administrador autorizado da loja para instalar o app.
+Conta de parceiro/aplicativo e endereços de retorno.
+Disponibilidade de credenciais e permissões de cada marketplace.
+Custos, extratos de liquidação e amostra de pedidos para conferência.
+Não enviar senhas em chat nem inserir tokens na demonstração.
+
+FONTES CONSULTADAS
+Vitrine: https://www.uzemy.com.br/
+Referência de propósito: https://www.escalafy.com/analitica
+Autorização Nuvemshop:
+https://tiendanube.github.io/api-documentation/authentication
+Portal SHEIN: https://open.sheincorp.com/

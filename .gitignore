@@ -1,0 +1,7 @@
+.sites-runtime/
+.sites-checkout/
+node_modules/
+.env
+.env.*
+*.tar.gz
+*.zip
