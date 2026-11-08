@@ -1,7 +1,10 @@
 .sites-runtime/
 .sites-checkout/
 node_modules/
+.next/
+tsconfig.tsbuildinfo
 .env
 .env.*
+!.env.example
 *.tar.gz
 *.zip

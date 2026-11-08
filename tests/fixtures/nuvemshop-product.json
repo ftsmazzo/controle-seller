@@ -1,0 +1,15 @@
+{
+  "id": 101,
+  "name": { "pt": "Camiseta algodão" },
+  "created_at": "2026-10-01T10:00:00Z",
+  "updated_at": "2026-11-01T12:30:00Z",
+  "variants": [
+    {
+      "id": 201,
+      "sku": "CAM-AZ-M",
+      "price": "129.90",
+      "stock": 7,
+      "values": [{ "pt": "Azul" }, { "pt": "M" }]
+    }
+  ]
+}

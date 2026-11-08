@@ -1,7 +1,46 @@
 {
-  "name": "controle-seller-piloto",
-  "version": "0.1.0",
+  "name": "controle-seller",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "scripts": { "test": "node --test tests/*.test.mjs", "preview": "node preview.mjs" }
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "node node_modules/next/dist/bin/next dev",
+    "app": "node node_modules/next/dist/bin/next start",
+    "worker": "node --import tsx src/worker.mts",
+    "migrate": "node --import tsx scripts/migrate.mts",
+    "user:create": "node --import tsx scripts/create-user.mts",
+    "build": "node node_modules/next/dist/bin/next build",
+    "lint": "eslint . --max-warnings=0",
+    "test": "node --import tsx --test tests/finance.test.mjs tests/finance-advanced.test.mjs && node node_modules/vitest/vitest.mjs run tests/foundation.test.ts tests/nuvemshop.test.ts tests/meta.test.ts tests/decision-product.test.ts tests/decision-finance.test.ts tests/final-blockers.test.ts",
+    "test:coverage": "node node_modules/vitest/vitest.mjs run --coverage",
+    "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
+    "gate": "npm run lint && npm run test && npm run typecheck && npm run build",
+    "legacy:preview": "node preview.mjs"
+  },
+  "dependencies": {
+    "next": "^16.0.1",
+    "pg": "^8.16.3",
+    "pg-boss": "^12.8.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.39.5",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^16.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^4.0.8"
+  }
 }

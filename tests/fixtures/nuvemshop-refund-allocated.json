@@ -1,0 +1,32 @@
+{
+  "id": 401,
+  "status": "closed",
+  "payment_status": "refunded",
+  "currency": "BRL",
+  "created_at": "2026-11-02T13:00:00Z",
+  "updated_at": "2026-11-03T13:00:00Z",
+  "products": [
+    {
+      "id": 9001,
+      "variant_id": 701,
+      "sku": "CAMISETA-A",
+      "quantity": 3,
+      "price": "100.00",
+      "discount": "0.00"
+    }
+  ],
+  "refunds": [
+    {
+      "id": "refund-1",
+      "amount": "200.00",
+      "products": [
+        {
+          "order_product_id": 9001,
+          "variant_id": 701,
+          "quantity": 2,
+          "restocked_quantity": 1
+        }
+      ]
+    }
+  ]
+}

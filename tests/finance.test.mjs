@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateOrder, summarize, parseBRL, priceFloor } from '../dist/finance.mjs';
-import { makeSeed } from '../dist/data.mjs';
+import { calculateOrder, summarize, parseBRL, priceFloor } from '../src/finance.mts';
 const products = [{ sku: 'P', costCents: 3000 }];
 const order = (overrides = {}) => ({ id: '1', status: 'paid', items: [{ sku: 'P', quantity: 2, unitPriceCents: 10000 }],
   discountCents: 1000, shippingRevenueCents: 1000, refundCents: 0, feesCents: 1000, shippingCostCents: 1500,
@@ -62,11 +61,4 @@ test('Brazilian currency parses without rounding ambiguity', () => {
 test('price floor covers percentage charges and target margin, rounded upward', () => {
   assert.equal(priceFloor({ costCents: 3000, shippingCents: 1000, packagingCents: 200, feesBps: 1500, taxBps: 500, targetBps: 2000 }), 7000);
   assert.throws(() => priceFloor({ costCents: 100, shippingCents: 0, packagingCents: 0, feesBps: 5000, taxBps: 0, targetBps: 5000 }));
-});
-test('all synthetic channel data is valid and includes visible unknown costs', () => {
-  const seed = makeSeed();
-  for (const channel of ['Nuvemshop', 'Mercado Livre', 'Shopee', 'SHEIN']) {
-    const s = summarize(seed.orders.filter(o => o.channel === channel), seed.products, []);
-    assert.ok(s.revenue > 0); assert.ok(s.missingCount > 0); assert.equal(s.result, null);
-  }
 });
