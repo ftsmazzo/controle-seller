@@ -100,20 +100,20 @@ async function configureWorkerRole() {
 async function installQueue() {
   const boss = new PgBoss({ connectionString, schema: 'pgboss', application_name: 'controle-seller-migrate' });
   await boss.start();
-  await boss.createQueue('sync.generic', { retryLimit: 5, retryBackoff: true, deadLetter: 'sync.dead-letter' });
   await boss.createQueue('sync.dead-letter');
+  await boss.createQueue('sync.generic', { retryLimit: 5, retryBackoff: true, deadLetter: 'sync.dead-letter' });
+  await boss.createQueue('nuvemshop.dead-letter');
   await boss.createQueue('nuvemshop.sync', {
     policy: 'key_strict_fifo', retryLimit: 8, retryBackoff: true, deadLetter: 'nuvemshop.dead-letter',
   });
-  await boss.createQueue('nuvemshop.dead-letter');
+  await boss.createQueue('meta.dead-letter');
   await boss.createQueue('meta.sync', {
     policy: 'key_strict_fifo', retryLimit: 8, retryBackoff: true, deadLetter: 'meta.dead-letter',
   });
-  await boss.createQueue('meta.dead-letter');
+  await boss.createQueue('cost.dead-letter');
   await boss.createQueue('cost.recalculate', {
     policy: 'key_strict_fifo', retryLimit: 8, retryBackoff: true, deadLetter: 'cost.dead-letter',
   });
-  await boss.createQueue('cost.dead-letter');
   await boss.stop({ graceful: true });
   await pool.query(
     `UPDATE pgboss.queue SET policy='key_strict_fifo',updated_on=now()
