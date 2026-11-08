@@ -17,18 +17,18 @@ const fixture = async (name: string) =>
   JSON.parse(await readFile(new URL(`fixtures/${name}`, import.meta.url), 'utf8')) as Record<string, unknown>;
 
 describe('contrato Nuvemshop 2025-03', () => {
-  it('gera autorização oficial e restringe redirecionamento', () => {
-    expect(authorizationUrl('estado +')).toBe('https://www.nuvemshop.com.br/apps/1234/authorize?state=estado%20%2B');
+  it('gera autorização oficial e restringe redirecionamento', async () => {
+    expect(await authorizationUrl('estado +')).toBe('https://www.nuvemshop.com.br/apps/1234/authorize?state=estado%20%2B');
     const allowlist = new Set(['/configuracoes']);
     expect(normalizeRedirect('/configuracoes', allowlist)).toBe('/configuracoes');
     expect(normalizeRedirect('https://evil.test', allowlist)).toBe('/configuracoes');
     expect(normalizeRedirect('//evil.test', allowlist)).toBe('/configuracoes');
   });
-  it('valida HMAC SHA-256 em base64 sobre o corpo bruto', () => {
+  it('valida HMAC SHA-256 em base64 sobre o corpo bruto', async () => {
     const raw = Buffer.from('{"id":1, "preserva":"espaços"}');
     const signature = createHmac('sha256', 'fixture-secret').update(raw).digest('base64');
-    expect(verifyWebhookHmac(raw, signature)).toBe(true);
-    expect(verifyWebhookHmac(Buffer.from('{}'), signature)).toBe(false);
+    expect(await verifyWebhookHmac(raw, signature)).toBe(true);
+    expect(await verifyWebhookHmac(Buffer.from('{}'), signature)).toBe(false);
   });
   it('converte dinheiro sem float e rejeita precisão silenciosa', () => {
     expect(decimalToCents('129.90')).toBe(12990n);
@@ -90,7 +90,10 @@ describe('contrato Nuvemshop 2025-03', () => {
         status: 200, headers: { Link: '<https://api.nuvemshop.com.br/2025-03/55/products?page=2>; rel="next"' },
       }))
       .mockResolvedValueOnce(new Response(JSON.stringify([{ id: 2 }]), { status: 200 }));
-    const client = new NuvemshopClient({ storeId: '55', accessToken: 'token-fixture', fetcher });
+    const client = new NuvemshopClient({
+      storeId: '55', accessToken: 'token-fixture', fetcher,
+      userAgent: 'ControleSeller/0.3 suporte@example.test', timeoutMs: 10_000,
+    });
     const ids: number[] = [];
     for await (const page of client.paginate<{ id:number }>('/products')) ids.push(...page.map(item => item.id));
     expect(ids).toEqual([1, 2]);
@@ -104,7 +107,10 @@ describe('contrato Nuvemshop 2025-03', () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response('{}', { status: 429, headers: { 'retry-after': '0' } }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 1 }), { status: 200 }));
-    const client = new NuvemshopClient({ storeId: '55', accessToken: 'secret-token', fetcher, random: () => 0 });
+    const client = new NuvemshopClient({
+      storeId: '55', accessToken: 'secret-token', fetcher, random: () => 0,
+      userAgent: 'ControleSeller/0.3 suporte@example.test', timeoutMs: 10_000,
+    });
     await expect(client.get('/products/1')).resolves.toEqual({ id: 1 });
     expect(fetcher).toHaveBeenCalledTimes(2);
   });

@@ -27,7 +27,7 @@ export function assertMetaManager(role: Role) {
 }
 
 export async function beginMetaOAuth(tenantId: string, userId: string, redirectPath: string | null) {
-  const config = metaConfig();
+  const config = await metaConfig();
   const redirect = normalizeMetaRedirect(redirectPath, config.redirectAllowlist);
   return withTenant(tenantId, userId, async (client, context) => {
     assertMetaManager(context.role);
@@ -48,7 +48,7 @@ export async function beginMetaOAuth(tenantId: string, userId: string, redirectP
 export async function finishMetaOAuth(
   tenantId: string, userId: string, state: string, code: string, fetcher: typeof fetch = fetch,
 ) {
-  const config = metaConfig();
+  const config = await metaConfig();
   const redirectPath = await withTenant(tenantId, userId, async (client, context) => {
     assertMetaManager(context.role);
     const consumed = await client.query<{ redirect_path: string }>(
@@ -281,8 +281,11 @@ export async function processMetaJob(pool: Pool, job: MetaJob, signal: AbortSign
     });
     runId = loaded.runId;
     const usage: Array<Record<string, unknown>> = [];
+    const metaApp = await metaConfig();
     const graph = new MetaClient({
       accessToken: loaded.credential.accessToken,
+      appSecret: metaApp.appSecret,
+      timeoutMs: metaApp.timeoutMs,
       onRateLimit: value => usage.push(value as unknown as Record<string, unknown>),
     });
     let entityCount = 0;

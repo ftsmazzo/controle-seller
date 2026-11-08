@@ -1,5 +1,6 @@
 import { createHmac, createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
+import { resolveNuvemshopApp } from '@/src/integrations/platform-apps.mjs';
 
 export const NUVEMSHOP_API_VERSION = '2025-03';
 export const NUVEMSHOP_SCOPES = ['read_products', 'read_orders'] as const;
@@ -10,21 +11,8 @@ export const NUVEMSHOP_TOPICS = [
   'customer/data_request', 'customer/redact', 'store/redact',
 ] as const;
 
-const required = (name: string): string => {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} não configurada.`);
-  return value;
-};
-export function nuvemshopConfig() {
-  return {
-    appId: required('NUVEMSHOP_APP_ID'),
-    clientSecret: required('NUVEMSHOP_CLIENT_SECRET'),
-    userAgent: required('NUVEMSHOP_USER_AGENT'),
-    publicUrl: new URL(required('APP_PUBLIC_URL')).origin,
-    redirectAllowlist: new Set((process.env.NUVEMSHOP_REDIRECT_ALLOWLIST ?? '/configuracoes')
-      .split(',').map(value => value.trim()).filter(Boolean)),
-    timeoutMs: Math.max(1_000, Number(process.env.NUVEMSHOP_TIMEOUT_MS ?? 10_000)),
-  };
+export async function nuvemshopConfig() {
+  return resolveNuvemshopApp();
 }
 
 export function createOAuthState(): { raw: string; digest: Buffer } {
@@ -39,8 +27,8 @@ export function normalizeRedirect(value: string | null, allowlist: Set<string>):
   if (!candidate.startsWith('/') || candidate.startsWith('//') || !allowlist.has(candidate)) return '/configuracoes';
   return candidate;
 }
-export function authorizationUrl(state: string): string {
-  const { appId } = nuvemshopConfig();
+export async function authorizationUrl(state: string): Promise<string> {
+  const { appId } = await nuvemshopConfig();
   return `https://www.nuvemshop.com.br/apps/${encodeURIComponent(appId)}/authorize?state=${encodeURIComponent(state)}`;
 }
 
@@ -52,7 +40,7 @@ const tokenSchema = z.object({
 });
 export type NuvemshopCredential = { accessToken: string; storeId: string; scopes: string[] };
 export async function exchangeAuthorizationCode(code: string, fetcher: typeof fetch = fetch): Promise<NuvemshopCredential> {
-  const config = nuvemshopConfig();
+  const config = await nuvemshopConfig();
   const response = await fetcher('https://www.nuvemshop.com.br/apps/authorize/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': config.userAgent },
@@ -66,9 +54,12 @@ export async function exchangeAuthorizationCode(code: string, fetcher: typeof fe
   return { accessToken: value.access_token, storeId: value.user_id, scopes };
 }
 
-export function verifyWebhookHmac(rawBody: Buffer, received: string | null, secret = nuvemshopConfig().clientSecret): boolean {
+export async function verifyWebhookHmac(
+  rawBody: Buffer, received: string | null, secret?: string,
+): Promise<boolean> {
   if (!received) return false;
-  const expected = createHmac('sha256', secret).update(rawBody).digest('base64');
+  const resolved = secret ?? (await nuvemshopConfig()).clientSecret;
+  const expected = createHmac('sha256', resolved).update(rawBody).digest('base64');
   const a = Buffer.from(received.trim(), 'utf8');
   const b = Buffer.from(expected, 'utf8');
   return a.length === b.length && timingSafeEqual(a, b);
@@ -114,13 +105,12 @@ export class NuvemshopClient {
   private readonly headers: Record<string, string>;
   private readonly requestTimes: number[] = [];
   private blockedUntil = 0;
-  constructor(options: NuvemshopClientOptions) {
-    const config = nuvemshopConfig();
+  constructor(options: NuvemshopClientOptions & { userAgent: string; timeoutMs: number }) {
     this.fetcher = options.fetcher ?? fetch;
-    this.timeoutMs = options.timeoutMs ?? config.timeoutMs;
+    this.timeoutMs = options.timeoutMs;
     this.random = options.random ?? Math.random;
     this.base = `https://api.nuvemshop.com.br/${NUVEMSHOP_API_VERSION}/${encodeURIComponent(options.storeId)}`;
-    this.headers = { Authorization: `Bearer ${options.accessToken}`, 'User-Agent': config.userAgent, Accept: 'application/json' };
+    this.headers = { Authorization: `Bearer ${options.accessToken}`, 'User-Agent': options.userAgent, Accept: 'application/json' };
   }
   async request<T>(pathOrUrl: string, init: RequestInit = {}, signal?: AbortSignal): Promise<{ data: T; next: string | null }> {
     const url = pathOrUrl.startsWith('https://') ? pathOrUrl : `${this.base}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;

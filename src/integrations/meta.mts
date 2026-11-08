@@ -1,30 +1,14 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import { resolveMetaApp } from '@/src/integrations/platform-apps.mjs';
 
 export const META_API_VERSION = 'v27.0';
 export const META_REQUIRED_SCOPE = 'ads_read';
 const GRAPH_ORIGIN = 'https://graph.facebook.com';
 const AUTH_ORIGIN = 'https://www.facebook.com';
 
-const required = (name: string): string => {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} não configurada.`);
-  return value;
-};
-
-export function metaConfig() {
-  const publicUrl = new URL(required('APP_PUBLIC_URL')).origin;
-  return {
-    appId: required('META_APP_ID'),
-    appSecret: required('META_APP_SECRET'),
-    configId: required('META_LOGIN_CONFIG_ID'),
-    publicUrl,
-    redirectUri: `${publicUrl}/api/integrations/meta/callback`,
-    redirectAllowlist: new Set((process.env.META_REDIRECT_ALLOWLIST ?? '/configuracoes')
-      .split(',').map(value => value.trim()).filter(Boolean)),
-    timeoutMs: Math.max(1_000, Number(process.env.META_TIMEOUT_MS ?? 15_000)),
-    includeBusinessManagement: process.env.META_INCLUDE_BUSINESS_MANAGEMENT === 'true',
-  };
+export async function metaConfig() {
+  return resolveMetaApp();
 }
 
 export function normalizeMetaRedirect(value: string | null, allowlist: Set<string>): string {
@@ -41,8 +25,8 @@ export function metaOAuthStateDigest(raw: string): Buffer {
   return createHash('sha256').update(raw).digest();
 }
 
-export function metaAuthorizationUrl(state: string): string {
-  const config = metaConfig();
+export async function metaAuthorizationUrl(state: string): Promise<string> {
+  const config = await metaConfig();
   const url = new URL(`/${META_API_VERSION}/dialog/oauth`, AUTH_ORIGIN);
   url.searchParams.set('client_id', config.appId);
   url.searchParams.set('redirect_uri', config.redirectUri);
@@ -56,8 +40,9 @@ export function metaAuthorizationUrl(state: string): string {
   return url.toString();
 }
 
-export function appSecretProof(accessToken: string, appSecret = metaConfig().appSecret): string {
-  return createHmac('sha256', appSecret).update(accessToken).digest('hex');
+export async function appSecretProof(accessToken: string, appSecret?: string): Promise<string> {
+  const secret = appSecret ?? (await metaConfig()).appSecret;
+  return createHmac('sha256', secret).update(accessToken).digest('hex');
 }
 
 const tokenSchema = z.object({
@@ -74,7 +59,7 @@ export interface MetaCredential {
 }
 
 export async function exchangeMetaAuthorizationCode(code: string, fetcher: typeof fetch = fetch) {
-  const config = metaConfig();
+  const config = await metaConfig();
   const body = new URLSearchParams({
     client_id: config.appId,
     client_secret: config.appSecret,
@@ -165,11 +150,11 @@ export class MetaClient {
   private readonly random: () => number;
   private readonly sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   private readonly onRateLimit: ((usage: MetaRateLimit) => void) | undefined;
-  constructor(options: MetaClientOptions) {
+  constructor(options: MetaClientOptions & { appSecret: string; timeoutMs: number }) {
     this.accessToken = options.accessToken;
-    this.proof = appSecretProof(options.accessToken, options.appSecret);
+    this.proof = createHmac('sha256', options.appSecret).update(options.accessToken).digest('hex');
     this.fetcher = options.fetcher ?? fetch;
-    this.timeoutMs = options.timeoutMs ?? metaConfig().timeoutMs;
+    this.timeoutMs = options.timeoutMs;
     this.random = options.random ?? Math.random;
     this.sleep = options.sleep ?? defaultSleep;
     this.onRateLimit = options.onRateLimit;

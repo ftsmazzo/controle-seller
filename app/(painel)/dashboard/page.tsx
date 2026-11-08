@@ -1,24 +1,157 @@
 import Link from 'next/link';
+import { listPlatformAppStatuses } from '@/src/integrations/platform-apps.mjs';
+import { withTenant } from '@/src/server/core.mjs';
 import { readDecisionData } from '@/src/server/decision.mjs';
 import { requireReadySession } from '@/src/server/session.mjs';
-const brl=(value:number|null)=>value==null?'—':new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(value/100);
+
+const brl = (value: number | null) => value == null
+  ? '—'
+  : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value / 100);
+
 export default async function DashboardPage() {
-  const session=await requireReadySession();
-  const to=new Date(),from=new Date();from.setDate(to.getDate()-29);
-  const data=await readDecisionData(session.activeTenantId,session.userId,{from,to});
-  const s=data.summary;
-  return <div className="overview">
-    <div className="overview-head"><div><span className="kicker">Últimos 30 dias</span><h2>O dinheiro, do pedido ao que sobra.</h2></div>
-      <p>Atualizado {s.updatedAt?new Date(s.updatedAt).toLocaleString('pt-BR'):'—'}</p></div>
-    <div className="diagnostic-layout"><section className="statement">
-      <div className="statement-row primary"><span>Receita líquida<small>Itens − descontos e estornos disponíveis</small></span><strong>{brl(s.revenueCents)}</strong></div>
-      <div className="statement-row"><span>Contribuição<small>Receita − custos de produto conhecidos</small></span><strong>{brl(s.contributionCents)}</strong></div>
-      <div className="statement-row result"><span>Resultado gerencial<small>Contribuição − mídia − despesas operacionais</small></span><strong>{brl(s.managerialResultCents)}</strong></div>
-      {s.orders===0?<div className="empty"><strong>O extrato está vazio.</strong><p>Conecte uma fonte ou aguarde a primeira sincronização. Não carregamos números fictícios.</p></div>:
-      s.coverage!==1&&<p className="notice">A contribuição permanece em aberto: faltam custos em {((1-(s.coverage??0))*100).toFixed(0)}% dos pedidos.</p>}
-      <details className="formula-box"><summary>Como calculamos</summary><p>Receita líquida = produtos − descontos de linha − desconto do pedido + frete cobrado − estornos. Contribuição = receita líquida − CMV − taxas − frete pago − impostos − embalagem − cashback. Resultado gerencial = contribuição − mídia − despesas operacionais. Um valor fica “—” quando a fonte não cobre seus componentes.</p></details>
-    </section><aside className="action-rail" aria-label="Prioridades e cobertura"><div className="coverage-mini"><span>Cobertura dos custos</span><strong>{s.coverage==null?'—':`${(s.coverage*100).toFixed(0)}%`}</strong><div role="progressbar" aria-label="Cobertura dos custos" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round((s.coverage??0)*100)}><i style={{height:`${(s.coverage??0)*100}%`}}/></div></div>
-      <h3>Prioridades</h3>{!data.generatedRecommendations.length?<p className="muted">Nenhuma regra encontrou evidência agora.</p>:data.generatedRecommendations.slice(0,5).map(item=><Link className="priority" href="/acoes" key={item.fingerprint}><b>{item.title}</b><small>{item.suggestedAction}</small></Link>)}
-      <Link className="text-link" href="/acoes">Ver todas as ações →</Link></aside></div>
-  </div>;
+  const session = await requireReadySession();
+  const to = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - 29);
+  const data = await readDecisionData(session.activeTenantId, session.userId, { from, to });
+  const apps = await listPlatformAppStatuses();
+  const connections = await withTenant(session.activeTenantId, session.userId, async client => {
+    const result = await client.query<{ provider: string; status: string; display_name: string }>(
+      `SELECT provider,status,display_name FROM seller.integrations
+       WHERE disconnected_at IS NULL ORDER BY provider`,
+    );
+    return result.rows;
+  });
+  const s = data.summary;
+  const connectedCount = connections.length;
+  const configuredApps = apps.filter(app => app.configured).length;
+
+  return (
+    <div className="dash">
+      <div className="dash-toolbar">
+        <div>
+          <span className="kicker">Inteligência de margem</span>
+          <h2>Lucro real dos últimos 30 dias</h2>
+          <p className="muted">
+            Atualizado {s.updatedAt ? new Date(s.updatedAt).toLocaleString('pt-BR') : 'agora'} · sem números inventados
+          </p>
+        </div>
+        <div className="dash-toolbar-actions">
+          <Link className="button secondary" href="/configuracoes">Conectar canais</Link>
+          <Link className="button" href="/acoes">Ver prioridades</Link>
+        </div>
+      </div>
+
+      {connectedCount === 0 && (
+        <section className="hero-empty">
+          <div>
+            <span className="eyebrow">Comece por aqui</span>
+            <h3>Conecte uma loja para ver o lucro de verdade</h3>
+            <p>
+              Configure Nuvemshop, Shopify, Mercado Livre, Shopee e Meta Ads no painel.
+              Sem EasyPanel. Sem planilha. Em poucos minutos você enxerga margem, custos e ads no mesmo lugar.
+            </p>
+            <Link className="button" href="/configuracoes">Abrir configurações de conexão</Link>
+          </div>
+          <ul className="setup-steps">
+            <li className={configuredApps > 0 ? 'done' : undefined}>
+              <b>1. Cadastre o app</b>
+              <span>App ID e Secret no painel administrativo</span>
+            </li>
+            <li className={connectedCount > 0 ? 'done' : undefined}>
+              <b>2. Conecte a loja</b>
+              <span>Autorize Nuvemshop, Shopify, ML ou Shopee</span>
+            </li>
+            <li>
+              <b>3. Cruze com Meta Ads</b>
+              <span>ROAS e contribuição no mesmo dashboard</span>
+            </li>
+          </ul>
+        </section>
+      )}
+
+      <section className="metric-grid" aria-label="Indicadores principais">
+        <article className="metric-card accent">
+          <span>Lucro gerencial</span>
+          <strong>{brl(s.managerialResultCents)}</strong>
+          <small>Contribuição − mídia − despesas</small>
+        </article>
+        <article className="metric-card">
+          <span>Faturamento líquido</span>
+          <strong>{brl(s.revenueCents)}</strong>
+          <small>Após descontos e estornos</small>
+        </article>
+        <article className="metric-card">
+          <span>Contribuição</span>
+          <strong>{brl(s.contributionCents)}</strong>
+          <small>Receita − custos conhecidos</small>
+        </article>
+        <article className="metric-card">
+          <span>Pedidos no período</span>
+          <strong>{s.orders}</strong>
+          <small>Cobertura de custos {s.coverage == null ? '—' : `${(s.coverage * 100).toFixed(0)}%`}</small>
+        </article>
+      </section>
+
+      <div className="dash-split">
+        <section className="panel-card">
+          <div className="panel-card-head">
+            <h3>Extrato da margem</h3>
+            <Link className="text-link" href="/pedidos">Ver pedidos →</Link>
+          </div>
+          <div className="statement-row primary">
+            <span>Receita líquida<small>Itens − descontos − estornos + frete cobrado</small></span>
+            <strong>{brl(s.revenueCents)}</strong>
+          </div>
+          <div className="statement-row">
+            <span>Contribuição<small>Receita − CMV e taxas conhecidas</small></span>
+            <strong>{brl(s.contributionCents)}</strong>
+          </div>
+          <div className="statement-row result">
+            <span>Resultado gerencial<small>Depois de mídia e despesas operacionais</small></span>
+            <strong>{brl(s.managerialResultCents)}</strong>
+          </div>
+          {s.orders === 0 ? (
+            <div className="empty soft">
+              <strong>Ainda sem pedidos sincronizados.</strong>
+              <p>Quando a loja conectar, este extrato passa a mostrar o dinheiro pedido a pedido.</p>
+            </div>
+          ) : s.coverage !== 1 && (
+            <p className="notice">
+              A contribuição permanece parcial: faltam custos em {((1 - (s.coverage ?? 0)) * 100).toFixed(0)}% dos pedidos.
+            </p>
+          )}
+        </section>
+
+        <aside className="panel-card side-rail">
+          <div className="panel-card-head">
+            <h3>Canais</h3>
+            <span className="pill">{connectedCount} ativos</span>
+          </div>
+          {connections.length === 0 ? (
+            <p className="muted">Nenhuma loja ou conta de ads conectada nesta empresa.</p>
+          ) : connections.map(item => (
+            <div className="channel-row" key={`${item.provider}-${item.display_name}`}>
+              <div>
+                <b>{item.display_name}</b>
+                <small>{item.provider.replace('_', ' ')}</small>
+              </div>
+              <span className={`status ${item.status === 'active' ? 'ok' : 'warn'}`}>{item.status}</span>
+            </div>
+          ))}
+          <div className="panel-card-head tight">
+            <h3>Prioridades</h3>
+          </div>
+          {!data.generatedRecommendations.length ? (
+            <p className="muted">Nenhuma regra encontrou evidência agora.</p>
+          ) : data.generatedRecommendations.slice(0, 4).map(item => (
+            <Link className="priority" href="/acoes" key={item.fingerprint}>
+              <b>{item.title}</b>
+              <small>{item.suggestedAction}</small>
+            </Link>
+          ))}
+        </aside>
+      </div>
+    </div>
+  );
 }

@@ -14,8 +14,8 @@ beforeEach(() => {
 });
 
 describe('Meta Graph/Marketing API v27.0', () => {
-  it('usa Facebook Login for Business com redirect exato e config_id', () => {
-    const url = new URL(metaAuthorizationUrl('state fixture'));
+  it('usa Facebook Login for Business com redirect exato e config_id', async () => {
+    const url = new URL(await metaAuthorizationUrl('state fixture'));
     expect(`${url.origin}${url.pathname}`).toBe('https://www.facebook.com/v27.0/dialog/oauth');
     expect(url.searchParams.get('client_id')).toBe('123456');
     expect(url.searchParams.get('config_id')).toBe('987654');
@@ -23,9 +23,9 @@ describe('Meta Graph/Marketing API v27.0', () => {
     expect(url.searchParams.get('state')).toBe('state fixture');
   });
 
-  it('calcula appsecret_proof HMAC-SHA256', () => {
+  it('calcula appsecret_proof HMAC-SHA256', async () => {
     const expected = createHmac('sha256', 'fixture-secret').update('fixture-token').digest('hex');
-    expect(appSecretProof('fixture-token')).toBe(expected);
+    expect(await appSecretProof('fixture-token')).toBe(expected);
   });
 
   it('converte valores declarados para centavos com arredondamento', () => {
@@ -38,15 +38,18 @@ describe('Meta Graph/Marketing API v27.0', () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: '1' }], paging: { next } }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: '2' }] }), { status: 200 }));
-    const client = new MetaClient({ accessToken: 'fixture-token', fetcher });
+    const client = new MetaClient({
+      accessToken: 'fixture-token', fetcher, appSecret: 'fixture-secret', timeoutMs: 15_000,
+    });
     const ids: string[] = [];
     for await (const page of client.paginate<{ id:string }>('/me/adaccounts')) ids.push(...page.map(item => item.id));
     expect(ids).toEqual(['1', '2']);
     expect(fetcher).toHaveBeenCalledTimes(2);
+    const proof = await appSecretProof('fixture-token', 'fixture-secret');
     for (const [input,init] of fetcher.mock.calls) {
       const url = input as URL;
       expect(url.pathname.startsWith(`/${META_API_VERSION}/`)).toBe(true);
-      expect(url.searchParams.get('appsecret_proof')).toBe(appSecretProof('fixture-token'));
+      expect(url.searchParams.get('appsecret_proof')).toBe(proof);
       expect(url.searchParams.has('access_token')).toBe(false);
       expect((init as RequestInit).headers).toMatchObject({Authorization:'Bearer fixture-token'});
     }
@@ -57,7 +60,10 @@ describe('Meta Graph/Marketing API v27.0', () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: 4, message: 'rate limit' } }), { status: 400 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: 'me' }), { status: 200 }));
-    const client = new MetaClient({ accessToken: 'fixture-token', fetcher, sleep, random: () => 0 });
+    const client = new MetaClient({
+      accessToken: 'fixture-token', fetcher, sleep, random: () => 0,
+      appSecret: 'fixture-secret', timeoutMs: 15_000,
+    });
     await expect(client.request('/me')).resolves.toEqual({ id: 'me' });
     expect(sleep).toHaveBeenCalledOnce();
   });

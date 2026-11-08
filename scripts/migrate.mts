@@ -43,7 +43,7 @@ async function configureRole() {
       seller.expenses,seller.webhook_inbox,seller.ad_accounts,seller.ad_campaigns,seller.ad_sets,seller.ads,
       seller.ad_insight_facts,seller.platform_conversions,seller.attribution_models,
       seller.marketing_touchpoints,seller.attribution_links,seller.data_quality_issues,
-      seller.recommendations,seller.calculation_versions,seller.audit_log TO ${role};
+      seller.recommendations,seller.calculation_versions,seller.audit_log,seller.platform_oauth_apps TO ${role};
     GRANT SELECT,INSERT,DELETE ON seller.meta_account_candidates TO ${role};
     GRANT SELECT,INSERT,UPDATE ON seller.cost_recalculation_outbox TO ${role};
     GRANT SELECT ON seller.worker_heartbeats TO ${role};
@@ -84,7 +84,8 @@ async function configureWorkerRole() {
       seller.sync_runs,seller.dead_letters,seller.ad_accounts,seller.ad_campaigns,seller.ad_sets,
       seller.ads,seller.ad_insight_facts,seller.platform_conversions,seller.attribution_models,
       seller.marketing_touchpoints,seller.attribution_links,seller.data_quality_issues,
-      seller.recommendations,seller.calculation_versions,seller.audit_log,seller.worker_heartbeats TO ${role};
+      seller.recommendations,seller.calculation_versions,seller.audit_log,seller.worker_heartbeats,
+      seller.platform_oauth_apps TO ${role};
     GRANT SELECT,INSERT,UPDATE,DELETE ON pgboss.version,pgboss.queue,pgboss.schedule,
       pgboss.subscription,pgboss.bam,pgboss.warning,pgboss.job_dependency,pgboss.instance,
       pgboss.job,pgboss.job_common,pgboss.queue_stats TO ${role};

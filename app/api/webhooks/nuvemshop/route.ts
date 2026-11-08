@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   let raw: Buffer;
   try { raw = await readLimitedBody(request, 1_000_000); }
   catch { return NextResponse.json({ error: 'Payload excede 1 MB.' }, { status: 413 }); }
-  if (!verifyWebhookHmac(raw, request.headers.get('x-linkedstore-hmac-sha256'))) {
+  if (!(await verifyWebhookHmac(raw, request.headers.get('x-linkedstore-hmac-sha256')))) {
     return NextResponse.json({ error: 'Assinatura inválida.' }, { status: 401 });
   }
   let payload: Record<string, unknown>;

@@ -6,19 +6,17 @@ import { usePathname } from 'next/navigation';
 const navigation: Array<[string, string]> = [
   ['Visão geral', '/dashboard'],
   ['Pedidos', '/pedidos'],
-  ['Produtos / SKUs', '/produtos'],
+  ['Produtos', '/produtos'],
   ['Marketing', '/marketing'],
   ['Estoque', '/estoque'],
   ['Recebimentos', '/recebimentos'],
-  ['Qualidade dos dados', '/qualidade'],
+  ['Qualidade', '/qualidade'],
   ['Ações', '/acoes'],
-  ['Integrações', '/integracoes'],
   ['Configurações', '/configuracoes'],
 ];
 
 export function PanelNav() {
   const pathname = usePathname();
-
   return (
     <>
       <nav className="nav" aria-label="Navegação principal">

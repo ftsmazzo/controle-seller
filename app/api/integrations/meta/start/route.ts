@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { beginMetaOAuth, safeMetaError } from '@/src/integrations/meta-store.mjs';
+import { beginMetaOAuth } from '@/src/integrations/meta-store.mjs';
 import { ForbiddenError, guardMutation, readLimitedFormData } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { readSession } from '@/src/server/session.mjs';
 
 export async function POST(request: Request) {
@@ -17,9 +18,12 @@ export async function POST(request: Request) {
     );
     return NextResponse.redirect(target, 303);
   } catch (error) {
-    return NextResponse.json(
-      { error: safeMetaError(error) },
-      { status: error instanceof ForbiddenError ? 403 : 500 },
+    const message = error instanceof ForbiddenError || error instanceof Error
+      ? error.message
+      : 'Falha ao iniciar Meta Ads.';
+    return NextResponse.redirect(
+      publicUrl(`/configuracoes?error=${encodeURIComponent(message)}`, request),
+      303,
     );
   }
 }

@@ -18,7 +18,7 @@ export function assertIntegrationManager(role: Role) {
   if (role !== 'owner' && role !== 'admin') throw new ForbiddenError('Somente owner ou admin pode gerenciar integrações.');
 }
 export async function beginNuvemshopOAuth(tenantId: string, userId: string, redirectPath: string | null) {
-  const config = nuvemshopConfig();
+  const config = await nuvemshopConfig();
   const redirect = normalizeRedirect(redirectPath, config.redirectAllowlist);
   const callbackUri = `${config.publicUrl}/api/integrations/nuvemshop/callback`;
   return withTenant(tenantId, userId, async (client, context) => {
@@ -44,7 +44,7 @@ export async function finishNuvemshopOAuth(
        WHERE state_hash=$1 AND tenant_id=$2 AND user_id=$3 AND provider='nuvemshop'
          AND redirect_uri=$4 AND used_at IS NULL AND expires_at>now()
        RETURNING redirect_path`,
-      [oauthStateDigest(state), tenantId, userId, `${nuvemshopConfig().publicUrl}/api/integrations/nuvemshop/callback`],
+      [oauthStateDigest(state), tenantId, userId, `${(await nuvemshopConfig()).publicUrl}/api/integrations/nuvemshop/callback`],
     );
     if (!result.rows[0]) throw new ForbiddenError('State OAuth inválido, expirado ou já utilizado.');
     return result.rows[0].redirect_path;
@@ -87,8 +87,11 @@ export async function finishNuvemshopOAuth(
 async function registerWebhooks(
   tenantId: string, userId: string, integrationId: string, credential: NuvemshopCredential,
 ) {
-  const config = nuvemshopConfig();
-  const client = new NuvemshopClient({ storeId: credential.storeId, accessToken: credential.accessToken });
+  const config = await nuvemshopConfig();
+  const client = new NuvemshopClient({
+    storeId: credential.storeId, accessToken: credential.accessToken,
+    userAgent: config.userAgent, timeoutMs: config.timeoutMs,
+  });
   for (const topic of NUVEMSHOP_TOPICS) {
     try {
       const webhookToken = randomBytes(32).toString('base64url');
@@ -152,7 +155,11 @@ export async function disconnectNuvemshop(tenantId: string, userId: string, inte
     assertIntegrationManager(context.role);
     return loadCredential(client, tenantId, integrationId);
   });
-  const client = new NuvemshopClient({ storeId: loaded.credential.storeId, accessToken: loaded.credential.accessToken });
+  const config = await nuvemshopConfig();
+  const client = new NuvemshopClient({
+    storeId: loaded.credential.storeId, accessToken: loaded.credential.accessToken,
+    userAgent: config.userAgent, timeoutMs: config.timeoutMs,
+  });
   for (const webhook of loaded.webhooks) {
     if (!webhook.externalId) continue;
     try { await client.delete(`/webhooks/${encodeURIComponent(webhook.externalId)}`); } catch { /* revogação local continua */ }
@@ -222,9 +229,12 @@ export async function processNuvemshopJob(pool: Pool, job: NuvemshopJob, signal:
     );
     return { ...credential, updatedThrough:cursor.rows[0]?.cursor.updatedThrough ?? null };
   });
+  const config = await nuvemshopConfig();
   const client = new NuvemshopClient({
     storeId: loaded.credential.storeId,
     accessToken: loaded.credential.accessToken,
+    userAgent: config.userAgent,
+    timeoutMs: config.timeoutMs,
   });
   const cursorTime = loaded.updatedThrough ? new Date(loaded.updatedThrough).getTime() : Date.now();
   const overlap = new Date(cursorTime - 10 * 60_000).toISOString();
@@ -319,7 +329,7 @@ export async function processNuvemshopJob(pool: Pool, job: NuvemshopJob, signal:
 async function retryWebhookRegistrations(
   pool: Pool, job: NuvemshopJob, client: NuvemshopClient, signal: AbortSignal,
 ): Promise<number> {
-  const config = nuvemshopConfig();
+  const config = await nuvemshopConfig();
   const failed = await withWorkerTenant(pool, job.tenantId, db =>
     db.query<{ topic:string }>(
       `SELECT topic FROM seller.integration_webhooks
