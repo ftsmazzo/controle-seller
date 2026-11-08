@@ -58,7 +58,8 @@ async function recordJobFailure(
     await client.query('BEGIN');
     await client.query(`SELECT set_config('app.tenant_id',$1,true)`,[tenantId]);
     await client.query(
-      `UPDATE seller.integrations SET status='error',last_error=$3 WHERE tenant_id=$1 AND id=$2`,
+      `UPDATE seller.integrations SET status='error',last_error=$3
+       WHERE tenant_id=$1 AND id=$2 AND disconnected_at IS NULL`,
       [tenantId,integrationId,message],
     );
     await client.query('COMMIT');
@@ -139,7 +140,7 @@ async function main() {
       console.info(JSON.stringify({ event: 'job.received', id: job.id, name: job.name }));
     }
   });
-  await boss.work<NuvemshopJob>('nuvemshop.sync', { batchSize: 4, pollingIntervalSeconds: 1 }, async jobs => {
+  await boss.work<NuvemshopJob>('nuvemshop.sync', { batchSize: 1, pollingIntervalSeconds: 1 }, async jobs => {
     for (const job of jobs) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(new Error('Job excedeu 14 minutos.')), 14 * 60_000);
@@ -164,7 +165,7 @@ async function main() {
       }
     }
   });
-  await boss.work<NuvemshopJob>('nuvemshop.dead-letter', { batchSize: 10 }, async jobs => {
+  await boss.work<NuvemshopJob>('nuvemshop.dead-letter', { batchSize: 1 }, async jobs => {
     for (const job of jobs) {
       const client = await workerPool.connect();
       try {
@@ -200,7 +201,7 @@ async function main() {
       }
     }
   });
-  await boss.work<MetaJob>('meta.dead-letter', { batchSize: 10 }, async jobs => {
+  await boss.work<MetaJob>('meta.dead-letter', { batchSize: 1 }, async jobs => {
     for (const job of jobs) {
       const client = await workerPool.connect();
       try {
@@ -222,7 +223,7 @@ async function main() {
   });
   await boss.work<CostRecalculationJob>(
     'cost.recalculate',
-    { batchSize: 2, pollingIntervalSeconds: 2 },
+    { batchSize: 1, pollingIntervalSeconds: 2 },
     async jobs => {
       for (const job of jobs) {
         let afterOrderId: string | null = null;
@@ -250,7 +251,7 @@ async function main() {
       }
     },
   );
-  await boss.work<CostRecalculationJob>('cost.dead-letter', { batchSize: 10 }, async jobs => {
+  await boss.work<CostRecalculationJob>('cost.dead-letter', { batchSize: 1 }, async jobs => {
     for (const job of jobs) {
       const client = await workerPool.connect();
       try {

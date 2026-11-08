@@ -51,6 +51,8 @@ describe('bloqueadores finais de produção', () => {
     expect(nuvemshop).toContain('i.disconnected_at IS NULL');
     expect(worker).toContain('processNuvemshopJob(workerPool');
     expect(worker).toContain('processMetaJob(workerPool');
+    expect(worker).not.toMatch(/batchSize: (?:2|4|10)/);
+    expect(worker).toContain('AND disconnected_at IS NULL');
   });
 
   it('aplica privilégio mínimo, índices de FK e marca webhook por tenant', async () => {

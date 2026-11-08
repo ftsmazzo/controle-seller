@@ -8,3 +8,4 @@ tsconfig.tsbuildinfo
 !.env.example
 *.tar.gz
 *.zip
+easypanel.inline.Dockerfile
