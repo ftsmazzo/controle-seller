@@ -99,17 +99,17 @@ export const productSchema = z.object({
 }).strict();
 
 const databaseUrl = process.env.DATABASE_URL;
+const expectedDatabaseRole = process.env.DATABASE_ROLE ?? process.env.APP_DATABASE_ROLE;
 const isProductionBuild = process.env.NEXT_PHASE === 'phase-production-build';
 if (process.env.NODE_ENV === 'production' && !isProductionBuild) {
   if (!databaseUrl) throw new Error('DATABASE_URL é obrigatória em produção.');
-  const expectedRole = process.env.APP_DATABASE_ROLE;
-  if (!expectedRole) throw new Error('APP_DATABASE_ROLE é obrigatória em produção.');
+  if (!expectedDatabaseRole) throw new Error('DATABASE_ROLE é obrigatória em produção.');
   if (process.env.TRUST_PROXY !== 'true') {
     throw new Error('TRUST_PROXY=true é obrigatório em produção para rate limit por IP.');
   }
   const configuredRole = decodeURIComponent(new URL(databaseUrl).username);
-  if (!configuredRole || configuredRole !== expectedRole) {
-    throw new Error('DATABASE_URL deve autenticar exatamente como APP_DATABASE_ROLE.');
+  if (!configuredRole || configuredRole !== expectedDatabaseRole) {
+    throw new Error('DATABASE_URL deve autenticar exatamente como DATABASE_ROLE.');
   }
 }
 const pool = new Pool({
@@ -127,8 +127,8 @@ export function ensureSafeDatabaseRole(): Promise<void> {
     if (!role || role.rolsuper || role.rolbypassrls) {
       throw new Error('Conexão da aplicação recusada: role superuser/BYPASSRLS.');
     }
-    if (process.env.NODE_ENV === 'production' && role.rolname !== process.env.APP_DATABASE_ROLE) {
-      throw new Error('Role efetiva diverge de APP_DATABASE_ROLE.');
+    if (process.env.NODE_ENV === 'production' && role.rolname !== expectedDatabaseRole) {
+      throw new Error('Role efetiva diverge de DATABASE_ROLE.');
     }
   }).catch(error => {
     databaseSafety = undefined;

@@ -49,6 +49,9 @@ async function assertSafeWorkerRole() {
   if (!role || role.rolsuper || role.rolbypassrls) {
     throw new Error('Conexão do worker recusada: role superuser/BYPASSRLS.');
   }
+  if (process.env.NODE_ENV === 'production' && role.rolname !== process.env.WORKER_DATABASE_ROLE) {
+    throw new Error('Role efetiva do worker diverge de WORKER_DATABASE_ROLE.');
+  }
 }
 async function recordJobFailure(
   tenantId:string,integrationId:string,message:string,
