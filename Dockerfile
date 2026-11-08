@@ -35,3 +35,17 @@ COPY scripts ./scripts
 COPY migrations ./migrations
 USER node
 CMD ["npm", "run", "migrate"]
+
+# Imagem operacional única: o EasyPanel reutiliza o mesmo artefato para
+# app e worker. O serviço app usa o CMD abaixo; o worker sobrescreve o
+# comando com `npm run worker`. Scripts de migration ficam disponíveis
+# somente para o bootstrap controlado do primeiro deploy.
+FROM app AS runtime
+USER root
+COPY --from=deps --chown=app:app /app/node_modules ./node_modules
+COPY --chown=app:app package.json tsconfig.json ./
+COPY --chown=app:app src ./src
+COPY --chown=app:app scripts ./scripts
+COPY --chown=app:app migrations ./migrations
+USER app
+CMD ["node", "server.js"]
