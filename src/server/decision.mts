@@ -27,8 +27,8 @@ export async function readDecisionData(
   tenantId: string, userId: string, filters: DecisionFilters,
 ) {
   return withTenant(tenantId, userId, async client => {
-    const [summary, expenses, freshness, orders, products, marketing, integrations, quality, receipts] = await Promise.all([
-      client.query(`WITH selected AS (
+    // Leituras sequenciais: o cliente pg-node não aceita consultas paralelas na mesma conexão.
+    const summary = await client.query(`WITH selected AS (
         SELECT o.id,o.status,o.integration_id,o.placed_at
         FROM seller.orders o
         LEFT JOIN seller.integrations i ON i.tenant_id=o.tenant_id AND i.id=o.integration_id
@@ -70,14 +70,14 @@ export async function readDecisionData(
         e.order_discount_cents::text,e.shipping_revenue_cents::text,e.refund_cents::text,
         l.cogs_cents::text,e.fees_cents::text,e.shipping_cost_cents::text,e.tax_cents::text,
         e.packaging_cents::text,e.cashback_cents::text
-      FROM lines l JOIN events e ON e.id=l.id`, values(filters)),
-      client.query(`SELECT category,amount_cents::text
+      FROM lines l JOIN events e ON e.id=l.id`, values(filters));
+    const expenses = await client.query(`SELECT category,amount_cents::text
         FROM seller.expenses WHERE competence_date BETWEEN $1::date AND $2::date`,
-      [filters.from,filters.to]),
-      client.query<{updated_at:Date|null}>(`SELECT max(greatest(o.source_updated_at,o.imported_at)) updated_at
+      [filters.from,filters.to]);
+    const freshness = await client.query<{updated_at:Date|null}>(`SELECT max(greatest(o.source_updated_at,o.imported_at)) updated_at
         FROM seller.orders o LEFT JOIN seller.integrations i
-          ON i.tenant_id=o.tenant_id AND i.id=o.integration_id WHERE ${orderWhere}`, values(filters)),
-      client.query(`WITH selected AS (
+          ON i.tenant_id=o.tenant_id AND i.id=o.integration_id WHERE ${orderWhere}`, values(filters));
+    const orders = await client.query(`WITH selected AS (
         SELECT o.id,o.external_id,o.status,o.placed_at,o.currency,o.integration_id,i.provider
         FROM seller.orders o LEFT JOIN seller.integrations i
           ON i.tenant_id=o.tenant_id AND i.id=o.integration_id WHERE ${orderWhere}
@@ -126,8 +126,8 @@ export async function readDecisionData(
             l.gross-l.line_discount-e.order_discount+e.shipping_revenue-e.refund,0) END)
           -l.cogs-e.fees-e.shipping_cost-e.taxes-e.packaging-e.cashback END::text contribution_cents
       FROM selected s JOIN lines l ON l.id=s.id JOIN events e ON e.id=s.id
-      ORDER BY s.placed_at DESC`, values(filters)),
-      client.query(`SELECT p.id,p.name,v.id variant_id,v.sku,v.price_cents::text,v.stock::text,
+      ORDER BY s.placed_at DESC`, values(filters));
+    const products = await client.query(`SELECT p.id,p.name,v.id variant_id,v.sku,v.price_cents::text,v.stock::text,
         i.provider,cv.unit_cost_cents::text cost_cents,cv.effective_at cost_effective_at,
         (SELECT count(*)::int FROM seller.order_lines ol WHERE ol.tenant_id=v.tenant_id AND ol.variant_id=v.id) sold_lines
         FROM seller.products p JOIN seller.variants v ON v.tenant_id=p.tenant_id AND v.product_id=p.id
@@ -140,8 +140,8 @@ export async function readDecisionData(
         ) costs ORDER BY priority DESC,effective_at DESC LIMIT 1) cv ON true
         WHERE p.archived_at IS NULL AND v.archived_at IS NULL
           AND ($1::text IS NULL OR i.provider=$1) AND ($2::text IS NULL OR p.name ILIKE '%'||$2||'%' OR v.sku ILIKE '%'||$2||'%')
-        ORDER BY p.name,v.sku LIMIT 500`, [filters.channel ?? null, filters.q ?? null]),
-      client.query(`WITH facts AS (
+        ORDER BY p.name,v.sku LIMIT 500`, [filters.channel ?? null, filters.q ?? null]);
+    const marketing = await client.query(`WITH facts AS (
           SELECT c.id,c.name,f.id fact_id,f.currency,f.spend_cents
           FROM seller.ad_campaigns c JOIN seller.ad_insight_facts f
             ON f.tenant_id=c.tenant_id AND f.object_level='campaign' AND f.object_id=c.id
@@ -171,18 +171,17 @@ export async function readDecisionData(
           (process.env.META_PURCHASE_ACTION_TYPES??'purchase,omni_purchase,offsite_conversion.fb_pixel_purchase')
             .split(',').map(value=>value.trim()).filter(Boolean),
           tenantId,
-        ]),
-      client.query(`SELECT id,provider,display_name,status,last_sync_at,last_error,created_at
-        FROM seller.integrations ORDER BY provider,created_at DESC`),
-      client.query(`SELECT id,code,severity,resource_type,details,detected_at
-        FROM seller.data_quality_issues WHERE resolved_at IS NULL ORDER BY detected_at DESC LIMIT 200`),
-      client.query(`SELECT o.id,o.external_id,o.placed_at,o.currency,
+        ]);
+    const integrations = await client.query(`SELECT id,provider,display_name,status,last_sync_at,last_error,created_at
+        FROM seller.integrations ORDER BY provider,created_at DESC`);
+    const quality = await client.query(`SELECT id,code,severity,resource_type,details,detected_at
+        FROM seller.data_quality_issues WHERE resolved_at IS NULL ORDER BY detected_at DESC LIMIT 200`);
+    const receipts = await client.query(`SELECT o.id,o.external_id,o.placed_at,o.currency,
         sum(ol.quantity*ol.unit_price_cents-ol.discount_cents)::text amount_cents,i.provider
         FROM seller.orders o JOIN seller.order_lines ol ON ol.tenant_id=o.tenant_id AND ol.order_id=o.id
         LEFT JOIN seller.integrations i ON i.tenant_id=o.tenant_id AND i.id=o.integration_id
         WHERE ${orderWhere} AND o.status='paid'
-        GROUP BY o.id,i.provider ORDER BY o.placed_at DESC LIMIT 250`, values(filters)),
-    ]);
+        GROUP BY o.tenant_id,o.id,i.provider ORDER BY o.placed_at DESC LIMIT 250`, values(filters));
     const facts = summary.rows.map(row => ({
       id:String(row.id),status:String(row.status) as DecisionOrderFact['status'],
       grossCents:Number(row.gross_cents),lineDiscountCents:Number(row.line_discount_cents),

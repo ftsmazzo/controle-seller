@@ -70,6 +70,13 @@ describe('bloqueadores finais de produção', () => {
     expect(webhook).toContain('mark_nuvemshop_webhook_enqueued($1,$2)');
   });
 
+  it('agrupa recebimentos pela chave composta do pedido e evita consultas paralelas no mesmo client', async () => {
+    const decision = await source('src/server/decision.mts');
+    expect(decision).toContain('GROUP BY o.tenant_id,o.id,i.provider');
+    expect(decision).not.toContain('GROUP BY o.id,i.provider');
+    expect(decision).not.toContain('await Promise.all([');
+  });
+
   it('mantém autenticação na interface com alerta, foco e loading', async () => {
     const [component,login,password,passwordRoute] = await Promise.all([
       source('app/components/auth-form.tsx'),
