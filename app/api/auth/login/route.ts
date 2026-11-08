@@ -4,6 +4,7 @@ import {
   databasePool, ensureSafeDatabaseRole, guardMutation, loginSchema, readLimitedBody,
   requestIp, sessionToken, verifyPassword,
 } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { COOKIE_NAME } from '@/src/server/session.mjs';
 
 export async function POST(request: Request) {
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
     'DELETE FROM seller.login_attempts WHERE ip_hash=$1 AND identifier_hash=$2',
     [ipHash, identifierHash],
   );
-  const response = NextResponse.redirect(new URL(user.must_change_password ? '/trocar-senha' : '/empresas', request.url), 303);
+  const response = NextResponse.redirect(publicUrl(user.must_change_password ? '/trocar-senha' : '/empresas', request), 303);
   response.cookies.set(COOKIE_NAME, token.raw, {
     httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production',
     path: '/', maxAge: ttl * 3600,

@@ -5,6 +5,7 @@ import {
   can, decryptCredential, encryptCredential, hashPassword, loginSchema,
   productSchema, readLimitedBody, verifyPassword,
 } from '../src/server/core.mjs';
+import { publicUrl } from '../src/server/http.mjs';
 
 describe('autorização', () => {
   it('mantém viewer somente leitura e restringe gestão ao owner', () => {
@@ -16,6 +17,13 @@ describe('autorização', () => {
   });
 });
 describe('autenticação e credenciais', () => {
+  it('gera redirecionamentos com a origem pública atrás do proxy', () => {
+    process.env.APP_PUBLIC_URL = 'https://seller.example.test/base-ignorada';
+    const request = new Request('http://0.0.0.0:3000/api/auth/login');
+    expect(publicUrl('/trocar-senha', request).href).toBe('https://seller.example.test/trocar-senha');
+    delete process.env.APP_PUBLIC_URL;
+    expect(publicUrl('/login', request).href).toBe('http://0.0.0.0:3000/login');
+  });
   it('usa scrypt com salt e comparação segura', async () => {
     const first = await hashPassword('SenhaTemporaria123');
     const second = await hashPassword('SenhaTemporaria123');

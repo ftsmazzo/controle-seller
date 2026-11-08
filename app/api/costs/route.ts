@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { costVersionSchema } from '@/src/decision-product.mjs';
 import { assertPermission, audit, guardMutation, readLimitedFormData, withTenant } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { enqueueCostRecalculation } from '@/src/server/queue.mjs';
 import { readSession } from '@/src/server/session.mjs';
 
@@ -63,7 +64,7 @@ export async function POST(request:Request) {
         [created.tenantId,created.costVersionId,queueJobId],
       );
     });
-    return NextResponse.redirect(new URL('/produtos',request.url),303);
+    return NextResponse.redirect(publicUrl('/produtos',request),303);
   }catch(error){
     return NextResponse.json({error:error instanceof Error?error.message:'Falha ao registrar custo.'},{status:403});
   }

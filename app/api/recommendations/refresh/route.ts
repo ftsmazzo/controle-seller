@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { periodSchema } from '@/src/decision-product.mjs';
 import { persistRecommendations, readDecisionData } from '@/src/server/decision.mjs';
 import { assertPermission, audit, guardMutation, readLimitedFormData, withTenant } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { readSession } from '@/src/server/session.mjs';
 
 export async function POST(request:Request) {
@@ -21,7 +22,7 @@ export async function POST(request:Request) {
         from:parsed.data.from.toISOString(),to:parsed.data.to.toISOString(),count:data.generatedRecommendations.length,
       });
     });
-    return NextResponse.redirect(new URL('/acoes',request.url),303);
+    return NextResponse.redirect(publicUrl('/acoes',request),303);
   }catch(error){
     return NextResponse.json({error:error instanceof Error?error.message:'Falha ao atualizar diagnóstico.'},{status:403});
   }

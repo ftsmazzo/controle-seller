@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   guardMutation, hashPassword, inTransaction, passwordSchema, readLimitedBody, sessionToken,
 } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { COOKIE_NAME, readSession } from '@/src/server/session.mjs';
 
 export async function POST(request: Request) {
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
       [session.userId, token.hash, session.activeTenantId, ttl],
     );
   });
-  const response = NextResponse.redirect(new URL('/empresas', request.url), 303);
+  const response = NextResponse.redirect(publicUrl('/empresas', request), 303);
   response.cookies.set(COOKIE_NAME, token.raw, {
     httpOnly:true, sameSite:'lax', secure:process.env.NODE_ENV==='production', path:'/', maxAge:ttl*3600,
   });

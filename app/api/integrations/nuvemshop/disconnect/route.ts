@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { disconnectNuvemshop, safeError } from '@/src/integrations/nuvemshop-store.mjs';
 import { ForbiddenError, guardMutation, readLimitedFormData } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { readSession } from '@/src/server/session.mjs';
 
 export async function POST(request: Request) {
@@ -13,7 +14,7 @@ export async function POST(request: Request) {
   if (typeof integrationId !== 'string') return NextResponse.json({ error: 'Integração inválida.' }, { status: 400 });
   try {
     await disconnectNuvemshop(session.activeTenantId, session.userId, integrationId);
-    return NextResponse.redirect(new URL('/configuracoes?nuvemshop=disconnected', request.url), 303);
+    return NextResponse.redirect(publicUrl('/configuracoes?nuvemshop=disconnected', request), 303);
   } catch (error) {
     return NextResponse.json({ error: safeError(error) }, { status: error instanceof ForbiddenError ? 403 : 502 });
   }

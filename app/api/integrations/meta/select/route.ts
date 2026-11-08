@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { safeMetaError, selectMetaAccounts } from '@/src/integrations/meta-store.mjs';
 import { ForbiddenError, guardMutation, readLimitedFormData } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { readSession } from '@/src/server/session.mjs';
 
 export async function POST(request: Request) {
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   }
   try {
     await selectMetaAccounts(session.activeTenantId, session.userId, integrationId, accountIds);
-    return NextResponse.redirect(new URL('/configuracoes?meta=connected', request.url), 303);
+    return NextResponse.redirect(publicUrl('/configuracoes?meta=connected', request), 303);
   } catch (error) {
     return NextResponse.json(
       { error: safeMetaError(error) },

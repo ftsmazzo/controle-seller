@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { disconnectMeta, safeMetaError } from '@/src/integrations/meta-store.mjs';
 import { ForbiddenError, guardMutation, readLimitedFormData } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { readSession } from '@/src/server/session.mjs';
 
 export async function POST(request: Request) {
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
   }
   try {
     await disconnectMeta(session.activeTenantId, session.userId, integrationId);
-    return NextResponse.redirect(new URL('/configuracoes?meta=disconnected', request.url), 303);
+    return NextResponse.redirect(publicUrl('/configuracoes?meta=disconnected', request), 303);
   } catch (error) {
     return NextResponse.json(
       { error: safeMetaError(error) },

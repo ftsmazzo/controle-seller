@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { audit, guardMutation, inTransaction, readLimitedFormData, tenantSchema, withTenant } from '@/src/server/core.mjs';
+import { publicUrl } from '@/src/server/http.mjs';
 import { readSession } from '@/src/server/session.mjs';
 
 function slugify(value: string): string {
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
     await withTenant(selectedTenant, session.userId, async client => {
       await client.query('UPDATE seller.sessions SET active_tenant_id = $1 WHERE id = $2 AND user_id = $3', [selectedTenant, session.id, session.userId]);
     });
-    return NextResponse.redirect(new URL('/dashboard', request.url), 303);
+    return NextResponse.redirect(publicUrl('/dashboard', request), 303);
   }
   const parsed = tenantSchema.safeParse({ name: form.get('name') });
   if (!parsed.success) return NextResponse.json({ error: 'Nome de empresa inválido.' }, { status: 400 });
@@ -31,5 +32,5 @@ export async function POST(request: Request) {
     await client.query('UPDATE seller.sessions SET active_tenant_id = $1 WHERE id = $2 AND user_id = $3', [tenantId, session.id, session.userId]);
     await audit(client, { tenantId, userId: session.userId, role: 'owner' }, 'tenant.created', 'tenant', tenantId);
   });
-  return NextResponse.redirect(new URL('/dashboard', request.url), 303);
+  return NextResponse.redirect(publicUrl('/dashboard', request), 303);
 }
