@@ -14,7 +14,7 @@
     "user:create": "node --import tsx scripts/create-user.mts",
     "build": "node node_modules/next/dist/bin/next build",
     "lint": "eslint . --max-warnings=0",
-    "test": "node --import tsx --test tests/finance.test.mjs tests/finance-advanced.test.mjs && node node_modules/vitest/vitest.mjs run tests/foundation.test.ts tests/nuvemshop.test.ts tests/meta.test.ts tests/decision-product.test.ts tests/decision-finance.test.ts tests/final-blockers.test.ts",
+    "test": "node --import tsx --test tests/finance.test.mjs tests/finance-advanced.test.mjs && node node_modules/vitest/vitest.mjs run tests/foundation.test.ts tests/nuvemshop.test.ts tests/meta.test.ts tests/decision-product.test.ts tests/decision-finance.test.ts tests/final-blockers.test.ts tests/predictive.test.ts",
     "test:coverage": "node node_modules/vitest/vitest.mjs run --coverage",
     "typecheck": "node node_modules/typescript/bin/tsc --noEmit",
     "gate": "npm run lint && npm run test && npm run typecheck && npm run build",

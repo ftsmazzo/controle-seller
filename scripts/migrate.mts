@@ -43,7 +43,9 @@ async function configureRole() {
       seller.expenses,seller.webhook_inbox,seller.ad_accounts,seller.ad_campaigns,seller.ad_sets,seller.ads,
       seller.ad_insight_facts,seller.platform_conversions,seller.attribution_models,
       seller.marketing_touchpoints,seller.attribution_links,seller.data_quality_issues,
-      seller.recommendations,seller.calculation_versions,seller.audit_log,seller.platform_oauth_apps TO ${role};
+      seller.recommendations,seller.calculation_versions,seller.audit_log,seller.platform_oauth_apps,
+      seller.daily_store_metrics,seller.forecast_runs,seller.forecast_points,seller.forecast_evals,
+      seller.forecast_job_outbox TO ${role};
     GRANT SELECT,INSERT,DELETE ON seller.meta_account_candidates TO ${role};
     GRANT SELECT,INSERT,UPDATE ON seller.cost_recalculation_outbox TO ${role};
     GRANT SELECT ON seller.worker_heartbeats TO ${role};
@@ -85,7 +87,8 @@ async function configureWorkerRole() {
       seller.ads,seller.ad_insight_facts,seller.platform_conversions,seller.attribution_models,
       seller.marketing_touchpoints,seller.attribution_links,seller.data_quality_issues,
       seller.recommendations,seller.calculation_versions,seller.audit_log,seller.worker_heartbeats,
-      seller.platform_oauth_apps TO ${role};
+      seller.platform_oauth_apps,seller.daily_store_metrics,seller.forecast_runs,
+      seller.forecast_points,seller.forecast_evals,seller.forecast_job_outbox TO ${role};
     GRANT SELECT,INSERT,UPDATE,DELETE ON pgboss.version,pgboss.queue,pgboss.schedule,
       pgboss.subscription,pgboss.bam,pgboss.warning,pgboss.job_dependency,pgboss.instance,
       pgboss.job,pgboss.job_common,pgboss.queue_stats TO ${role};
@@ -95,7 +98,9 @@ async function configureWorkerRole() {
       seller.pending_nuvemshop_webhooks(integer),seller.nuvemshop_webhook_retry_candidates(integer),
       seller.mark_nuvemshop_webhook_enqueued(uuid,uuid),seller.meta_daily_sync_candidates(integer),
       seller.pending_cost_recalculations(integer),
-      seller.mark_cost_recalculation_enqueued(uuid,uuid,uuid) TO ${role};`);
+      seller.mark_cost_recalculation_enqueued(uuid,uuid,uuid),
+      seller.pending_forecast_jobs(integer),seller.mark_forecast_job_enqueued(uuid,uuid),
+      seller.forecast_weekly_candidates(integer) TO ${role};`);
   await pool.query(`GRANT EXECUTE ON FUNCTION pgboss.job_now() TO ${role}`);
 }
 async function installQueue() {
@@ -115,11 +120,15 @@ async function installQueue() {
   await boss.createQueue('cost.recalculate', {
     policy: 'key_strict_fifo', retryLimit: 8, retryBackoff: true, deadLetter: 'cost.dead-letter',
   });
+  await boss.createQueue('forecast.dead-letter');
+  await boss.createQueue('forecast.compute', {
+    policy: 'key_strict_fifo', retryLimit: 5, retryBackoff: true, deadLetter: 'forecast.dead-letter',
+  });
   await boss.stop({ graceful: true });
   await pool.query(
     `UPDATE pgboss.queue SET policy='key_strict_fifo',updated_on=now()
      WHERE name=ANY($1::text[]) AND policy<>'key_strict_fifo'`,
-    [['nuvemshop.sync','meta.sync','cost.recalculate']],
+    [['nuvemshop.sync','meta.sync','cost.recalculate','forecast.compute']],
   );
 }
 async function main() {

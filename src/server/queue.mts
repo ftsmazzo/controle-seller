@@ -77,3 +77,21 @@ export async function enqueueCostRecalculation(job: CostRecalculationJob): Promi
   if (!id) throw new Error(`Fila recusou o recálculo do custo ${job.costVersionId}; tente novamente.`);
   return id;
 }
+
+export interface ForecastJob {
+  tenantId: string;
+  horizonDays: 30 | 60 | 90;
+  outboxId?: string;
+}
+
+export async function enqueueForecast(job: ForecastJob): Promise<string> {
+  const id = await (await queue()).send('forecast.compute', job, {
+    singletonKey: job.tenantId,
+    retryLimit: 5,
+    retryBackoff: true,
+    expireInSeconds: 20 * 60,
+    deadLetter: 'forecast.dead-letter',
+  });
+  if (!id) throw new Error(`Fila recusou o forecast do tenant ${job.tenantId}.`);
+  return id;
+}

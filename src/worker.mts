@@ -3,7 +3,8 @@ import { Pool } from 'pg';
 import { processNuvemshopJob, safeError } from './integrations/nuvemshop-store.mjs';
 import { processMetaJob, safeMetaError } from './integrations/meta-store.mjs';
 import { recalculateAttributionsForVariantPage } from './integrations/attribution.mjs';
-import type { CostRecalculationJob, MetaJob, NuvemshopJob } from './server/queue.mjs';
+import { computeForecastOnClient } from './server/predictive.mjs';
+import type { CostRecalculationJob, ForecastJob, MetaJob, NuvemshopJob } from './server/queue.mjs';
 
 const connectionString = process.env.WORKER_DATABASE_URL;
 if (!connectionString) throw new Error('WORKER_DATABASE_URL é obrigatória para isolar o papel do worker.');
@@ -32,6 +33,7 @@ const boss = new PgBoss({
 let heartbeat: NodeJS.Timeout | undefined;
 let recoveryTimer: NodeJS.Timeout | undefined;
 let metaTimer: NodeJS.Timeout | undefined;
+let forecastTimer: NodeJS.Timeout | undefined;
 
 async function beat() {
   await workerPool.query(
@@ -133,6 +135,45 @@ async function pumpCostRecalculations() {
       `SELECT seller.mark_cost_recalculation_enqueued($1,$2,$3)`,
       [row.tenant_id,row.cost_version_id,id],
     );
+  }
+}
+async function pumpForecastJobs() {
+  const pending = await workerPool.query<{
+    tenant_id: string; outbox_id: string; horizon_days: number;
+  }>(`SELECT * FROM seller.pending_forecast_jobs(50)`);
+  for (const row of pending.rows) {
+    const horizon = (row.horizon_days === 60 || row.horizon_days === 90 ? row.horizon_days : 30) as 30 | 60 | 90;
+    const id = await boss.send('forecast.compute', {
+      tenantId: row.tenant_id,
+      horizonDays: horizon,
+      outboxId: row.outbox_id,
+    } satisfies ForecastJob, {
+      singletonKey: row.tenant_id,
+      retryLimit: 5,
+      retryBackoff: true,
+      expireInSeconds: 20 * 60,
+      deadLetter: 'forecast.dead-letter',
+    });
+    if (!id) throw new Error(`Fila recusou forecast do tenant ${row.tenant_id}.`);
+    await workerPool.query(
+      `SELECT seller.mark_forecast_job_enqueued($1,$2)`,
+      [row.tenant_id, row.outbox_id],
+    );
+  }
+  const weekly = await workerPool.query<{ tenant_id: string }>(
+    `SELECT * FROM seller.forecast_weekly_candidates(50)`,
+  );
+  for (const row of weekly.rows) {
+    await boss.send('forecast.compute', {
+      tenantId: row.tenant_id,
+      horizonDays: 30,
+    } satisfies ForecastJob, {
+      singletonKey: row.tenant_id,
+      retryLimit: 5,
+      retryBackoff: true,
+      expireInSeconds: 20 * 60,
+      deadLetter: 'forecast.dead-letter',
+    });
   }
 }
 async function main() {
@@ -274,19 +315,73 @@ async function main() {
       }
     }
   });
+  await boss.work<ForecastJob>('forecast.compute', { batchSize: 1, pollingIntervalSeconds: 5 }, async jobs => {
+    for (const job of jobs) {
+      const client = await workerPool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(
+          `SELECT set_config('app.tenant_id',$1,true), set_config('app.user_id','',true)`,
+          [job.data.tenantId],
+        );
+        await computeForecastOnClient(client, job.data.tenantId, {
+          horizon: job.data.horizonDays,
+          scenario: 'baseline',
+        });
+        if (job.data.outboxId) {
+          await client.query(
+            `UPDATE seller.forecast_job_outbox SET processed_at=now()
+             WHERE tenant_id=$1 AND id=$2`,
+            [job.data.tenantId, job.data.outboxId],
+          );
+        }
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+  });
+  await boss.work<ForecastJob>('forecast.dead-letter', { batchSize: 1 }, async jobs => {
+    for (const job of jobs) {
+      const client = await workerPool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SELECT set_config('app.tenant_id',$1,true)`, [job.data.tenantId]);
+        await client.query(
+          `INSERT INTO seller.dead_letters(tenant_id,kind,payload,error)
+           VALUES($1,'forecast.compute',$2,$3)`,
+          [job.data.tenantId, job.data, 'Tentativas do forecast esgotadas.'],
+        );
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    }
+  });
   await beat();
   heartbeat = setInterval(() => void beat().catch(error => console.error('heartbeat', error)), intervalMs);
   await pumpNuvemshopRecovery();
   await pumpMetaDaily();
   await pumpCostRecalculations();
+  await pumpForecastJobs();
   recoveryTimer = setInterval(
-    () => void Promise.all([pumpNuvemshopRecovery(),pumpCostRecalculations()])
+    () => void Promise.all([pumpNuvemshopRecovery(),pumpCostRecalculations(),pumpForecastJobs()])
       .catch(error => console.error('worker.recovery', safeError(error))),
     30_000,
   );
   metaTimer = setInterval(
     () => void pumpMetaDaily().catch(error => console.error('meta.daily', safeMetaError(error))),
     60 * 60_000,
+  );
+  forecastTimer = setInterval(
+    () => void pumpForecastJobs().catch(error => console.error('forecast.pump', safeError(error))),
+    6 * 60 * 60_000,
   );
   console.info(JSON.stringify({ event: 'worker.ready', workerName }));
 }
@@ -295,6 +390,7 @@ async function stop(signal: string) {
   if (heartbeat) clearInterval(heartbeat);
   if (recoveryTimer) clearInterval(recoveryTimer);
   if (metaTimer) clearInterval(metaTimer);
+  if (forecastTimer) clearInterval(forecastTimer);
   await boss.stop({ graceful: true });
   await workerPool.end();
   process.exit(0);

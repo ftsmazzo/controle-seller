@@ -56,6 +56,7 @@ As migrations são cumulativas e têm checksum: nunca edite uma já aplicada; cr
 
 - `app/`: páginas e rotas HTTP.
 - `src/server/`: autenticação, criptografia, RBAC, transações e auditoria.
+- `src/predictive/`: ensemble de previsão (sazonal + ridge + stacking).
 - `src/integrations/`: contratos neutros de comércio e Ads.
 - `src/worker.mts`: consumidor e heartbeat.
 - `migrations/`: schema PostgreSQL e políticas.
@@ -63,7 +64,7 @@ As migrations são cumulativas e têm checksum: nunca edite uma já aplicada; cr
 
 ## Produto decisório
 
-O shell operacional oferece Visão geral, Pedidos, Produtos/SKUs, Marketing,
+O shell operacional oferece Visão geral, Previsões, Pedidos, Produtos/SKUs, Marketing,
 Estoque, Recebimentos, Qualidade dos dados, Ações, Integrações e Configurações.
 As consultas são executadas no servidor dentro do contexto RLS do tenant e
 aceitam período, canal, status e busca. O ambiente não contém seeds de negócio:
@@ -86,6 +87,19 @@ Marketing separa ROAS declarado pela plataforma da receita e margem associadas a
 pedidos reais com evidência. O modelo `evidence-last-touch-v1`, janela de 28 dias,
 é observacional e não prova causalidade ou incrementalidade. Exports CSV incluem
 proteção contra formula injection.
+
+### Dashboard preditiva (`/previsoes`)
+
+Módulo de ensemble learning para receita diária da loja (horizontes 30/60/90),
+usando série de pedidos pagos + spend de Meta Ads (`ad_insight_facts`). Combina
+média móvel sazonal, ridge de vendas e ridge sensível a ads via stacking
+ponderado pelo erro de validação. A UI mostra previsto vs realizado, faixa
+P10–P90, breakdown por canal, drivers e what-if de investimento diário em ads.
+
+APIs: `GET/POST /api/forecast`, `POST /api/forecast/what-if`. Persistência em
+`seller.daily_store_metrics`, `forecast_runs`, `forecast_points` e
+`forecast_evals` (migração `008_predictive_dashboard.sql`). O worker processa a
+fila `forecast.compute` semanalmente e sob demanda.
 
 ### Aplicar o marco
 
