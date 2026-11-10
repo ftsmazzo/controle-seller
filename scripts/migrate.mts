@@ -23,6 +23,38 @@ console.info(JSON.stringify({
   hasAdminUrl: Boolean(process.env.DATABASE_ADMIN_URL),
   migrationsDir: path.resolve('migrations'),
 }));
+if (!process.env.DATABASE_ADMIN_URL) {
+  console.warn(JSON.stringify({
+    event: 'migrate.warning',
+    message: 'DATABASE_ADMIN_URL ausente. Sem ela o migrate usa a role da app/worker e pode falhar em DDL (schema public/seller).',
+  }));
+}
+
+function permissionDeniedMessage(error: unknown): string {
+  const err = error as { code?: string; message?: string };
+  if (err?.code !== '42501') return err?.message ?? String(error);
+  return [
+    'Permissão insuficiente para migrar o banco.',
+    'No EasyPanel, defina DATABASE_ADMIN_URL com a connection string do usuário dono do Postgres',
+    '(o usuário root/admin do serviço de banco, não a role APP_DATABASE_ROLE/WORKER_DATABASE_ROLE).',
+    `Detalhe: ${err.message ?? 'permission denied'}`,
+  ].join(' ');
+}
+
+async function ensureSchemaMigrationsTable(client: import('pg').PoolClient): Promise<void> {
+  // CREATE TABLE IF NOT EXISTS exige CREATE no schema mesmo se a tabela já existe (PG 15+).
+  const existing = await client.query<{ id: string | null }>(
+    `SELECT to_regclass('public.schema_migrations')::text AS id`,
+  );
+  if (existing.rows[0]?.id) return;
+  try {
+    await client.query(`CREATE TABLE public.schema_migrations (
+      name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now()
+    )`);
+  } catch (error) {
+    throw new Error(permissionDeniedMessage(error));
+  }
+}
 
 function identifier(value: string): string {
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(value)) throw new Error('APP_DATABASE_ROLE inválida.');
@@ -150,35 +182,33 @@ async function main() {
   const client = await pool.connect();
   try {
     await client.query(`SELECT pg_advisory_lock(hashtextextended('controle-seller:migrations',0))`);
-    await client.query(`CREATE TABLE IF NOT EXISTS public.schema_migrations (
-      name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now()
-    )`);
-  const directory = path.resolve('migrations');
-  const files = (await readdir(directory)).filter(file => file.endsWith('.sql')).sort();
-  for (const file of files) {
-    const sql = await readFile(path.join(directory, file), 'utf8');
-    const checksum = createHash('sha256').update(sql).digest('hex');
-    await client.query('BEGIN');
-    try {
-      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('controle-seller:migrations',0))`);
-      const existing = await client.query<{ checksum: string }>(
-        'SELECT checksum FROM public.schema_migrations WHERE name=$1 FOR UPDATE', [file],
-      );
-      if (existing.rows[0]) {
-        if (existing.rows[0].checksum !== checksum) throw new Error(`Migração aplicada foi alterada: ${file}`);
+    await ensureSchemaMigrationsTable(client);
+    const directory = path.resolve('migrations');
+    const files = (await readdir(directory)).filter(file => file.endsWith('.sql')).sort();
+    for (const file of files) {
+      const sql = await readFile(path.join(directory, file), 'utf8');
+      const checksum = createHash('sha256').update(sql).digest('hex');
+      await client.query('BEGIN');
+      try {
+        await client.query(`SELECT pg_advisory_xact_lock(hashtextextended('controle-seller:migrations',0))`);
+        const existing = await client.query<{ checksum: string }>(
+          'SELECT checksum FROM public.schema_migrations WHERE name=$1 FOR UPDATE', [file],
+        );
+        if (existing.rows[0]) {
+          if (existing.rows[0].checksum !== checksum) throw new Error(`Migração aplicada foi alterada: ${file}`);
+          await client.query('COMMIT');
+          console.info(`já aplicada: ${file}`);
+          continue;
+        }
+        await client.query(sql);
+        await client.query('INSERT INTO public.schema_migrations(name, checksum) VALUES ($1,$2)', [file, checksum]);
         await client.query('COMMIT');
-        console.info(`já aplicada: ${file}`);
-        continue;
+        console.info(`aplicada: ${file}`);
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw new Error(`${file}: ${permissionDeniedMessage(error)}`);
       }
-      await client.query(sql);
-      await client.query('INSERT INTO public.schema_migrations(name, checksum) VALUES ($1,$2)', [file, checksum]);
-      await client.query('COMMIT');
-      console.info(`aplicada: ${file}`);
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
     }
-  }
   } finally {
     await client.query(`SELECT pg_advisory_unlock(hashtextextended('controle-seller:migrations',0))`).catch(() => undefined);
     client.release();
@@ -187,4 +217,11 @@ async function main() {
   await configureRole();
   await configureWorkerRole();
 }
-main().finally(() => pool.end()).catch(error => { console.error(error); process.exitCode = 1; });
+main().finally(() => pool.end()).catch(error => {
+  console.error(JSON.stringify({
+    event: 'migrate.failed',
+    message: error instanceof Error ? error.message : String(error),
+  }));
+  console.error(error);
+  process.exitCode = 1;
+});
