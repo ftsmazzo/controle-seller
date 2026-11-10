@@ -1,9 +1,8 @@
 /**
  * Wrapper do server.js do Next standalone.
- * package.json tem "type": "module", então este entrypoint precisa ser ESM.
- * O EasyPanel força `node server.js` — tenta migrate e SEMPRE sobe o app.
- * A role controle_seller_app não tem DDL; sem DATABASE_ADMIN_URL o migrate
- * pode falhar e isso não pode derrubar o login.
+ * 1) migrate
+ * 2) bootstrap admin (se BOOTSTRAP_ADMIN_* estiver no EasyPanel)
+ * 3) sobe o Next
  */
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -11,27 +10,34 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const skip = process.env.SKIP_MIGRATIONS === '1';
 
-if (!skip) {
-  console.log(JSON.stringify({ event: 'migrate.start', source: 'server-with-migrate' }));
-  const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/migrate.mts'], {
+function runNode(script, label) {
+  console.log(JSON.stringify({ event: `${label}.start`, source: 'server-with-migrate' }));
+  const result = spawnSync(process.execPath, ['--import', 'tsx', script], {
     cwd: root,
     env: process.env,
     stdio: 'inherit',
   });
   if (result.status !== 0) {
     console.error(JSON.stringify({
-      event: 'migrate.failed_continue',
+      event: `${label}.failed_continue`,
       source: 'server-with-migrate',
       status: result.status,
-      message: 'Migrate falhou; app sobe mesmo assim. Sem DATABASE_ADMIN_URL a role da app não aplica DDL.',
     }));
-  } else {
-    console.log(JSON.stringify({ event: 'migrate.done', source: 'server-with-migrate' }));
+    return false;
   }
+  console.log(JSON.stringify({ event: `${label}.done`, source: 'server-with-migrate' }));
+  return true;
+}
+
+if (process.env.SKIP_MIGRATIONS !== '1') {
+  runNode('scripts/migrate.mts', 'migrate');
 } else {
   console.log(JSON.stringify({ event: 'migrate.skipped', source: 'server-with-migrate' }));
+}
+
+if (process.env.BOOTSTRAP_ADMIN_EMAIL && process.env.BOOTSTRAP_ADMIN_PASSWORD) {
+  runNode('scripts/bootstrap-admin.mts', 'bootstrap');
 }
 
 const require = createRequire(import.meta.url);
