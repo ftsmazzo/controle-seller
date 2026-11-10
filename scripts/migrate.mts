@@ -4,10 +4,25 @@ import path from 'node:path';
 import { Pool } from 'pg';
 import { PgBoss } from 'pg-boss';
 
-const configuredConnectionString = process.env.DATABASE_ADMIN_URL ?? process.env.DATABASE_URL;
-if (!configuredConnectionString) throw new Error('DATABASE_ADMIN_URL ou DATABASE_URL é obrigatória.');
+const configuredConnectionString = process.env.DATABASE_ADMIN_URL
+  ?? process.env.DATABASE_URL
+  ?? process.env.WORKER_DATABASE_URL;
+if (!configuredConnectionString) {
+  throw new Error('DATABASE_ADMIN_URL, DATABASE_URL ou WORKER_DATABASE_URL é obrigatória para migrate.');
+}
 const connectionString: string = configuredConnectionString;
 const pool = new Pool({ connectionString, max: 1, application_name: 'controle-seller-migrate' });
+const migrateSource = process.env.DATABASE_ADMIN_URL
+  ? 'DATABASE_ADMIN_URL'
+  : process.env.DATABASE_URL
+    ? 'DATABASE_URL'
+    : 'WORKER_DATABASE_URL';
+console.info(JSON.stringify({
+  event: 'migrate.boot',
+  source: migrateSource,
+  hasAdminUrl: Boolean(process.env.DATABASE_ADMIN_URL),
+  migrationsDir: path.resolve('migrations'),
+}));
 
 function identifier(value: string): string {
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(value)) throw new Error('APP_DATABASE_ROLE inválida.');
