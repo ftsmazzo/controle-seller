@@ -20,7 +20,7 @@ export default async function LoginPage({
         <p>Uma base confiável para operar vendas, custos e decisões.</p>
       </section>
       <section className="form-wrap">
-        <AuthForm kind="login" initialError={initialError} />
+        <AuthForm kind="login" {...(initialError ? { initialError } : {})} />
       </section>
     </main>
   );
