@@ -30,8 +30,17 @@ export function guardMutation(request: Request, key: string, limit = 30): void {
   const origin = request.headers.get('origin');
   const forwarded = request.headers.get('x-forwarded-host');
   const hostHeader = forwarded ?? request.headers.get('host');
-  const host = hostHeader?.split(',')[0]?.trim();
-  if (!origin || !host || new URL(origin).host !== host) {
+  const host = hostHeader?.split(',')[0]?.trim()?.replace(/:\d+$/, '');
+  const originHost = origin ? new URL(origin).host.replace(/:\d+$/, '') : '';
+  let publicHost = '';
+  try {
+    if (process.env.APP_PUBLIC_URL) publicHost = new URL(process.env.APP_PUBLIC_URL).host.replace(/:\d+$/, '');
+  } catch { /* ignore */ }
+  const allowed = Boolean(originHost) && (
+    originHost === host
+    || (publicHost !== '' && originHost === publicHost)
+  );
+  if (!origin || !host || !allowed) {
     throw new ForbiddenError('Origem da solicitação inválida.');
   }
   const declared = request.headers.get('content-length');

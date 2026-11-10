@@ -4,6 +4,17 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 type Kind = 'login' | 'password';
 
+function sameOriginPath(locationHeader: string | null, fallback: string): string {
+  if (!locationHeader) return fallback;
+  try {
+    const url = new URL(locationHeader, window.location.origin);
+    if (url.origin !== window.location.origin) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return locationHeader.startsWith('/') ? locationHeader : fallback;
+  }
+}
+
 export function AuthForm({ kind }: { kind: Kind }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,25 +46,22 @@ export function AuthForm({ kind }: { kind: Kind }) {
         headers: { Accept: 'application/json' },
       });
 
-      // 303/302 com Set-Cookie: navegamos manualmente para aplicar a sessão.
+      const fallback = kind === 'login' ? '/empresas' : '/';
       if (response.status >= 300 && response.status < 400) {
-        const location = response.headers.get('Location') || (kind === 'login' ? '/empresas' : '/');
-        window.location.assign(location);
+        window.location.assign(sameOriginPath(response.headers.get('Location'), fallback));
         return;
       }
       if (response.type === 'opaqueredirect' || response.status === 0) {
-        window.location.assign(kind === 'login' ? '/empresas' : '/');
+        window.location.assign(fallback);
         return;
       }
       if (response.redirected) {
-        window.location.assign(response.url);
+        window.location.assign(sameOriginPath(response.url, fallback));
         return;
       }
 
       const payload = await response.json().catch(() => ({
-        error: response.ok
-          ? 'Não foi possível concluir a solicitação.'
-          : `Falha no acesso (${response.status}).`,
+        error: `Falha no acesso (${response.status}).`,
       })) as {
         error?: string | { formErrors?: string[] };
       };
