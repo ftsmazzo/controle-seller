@@ -4,26 +4,44 @@ import {
   databasePool, ensureSafeDatabaseRole, guardMutation, loginSchema, readLimitedBody,
   requestIp, sessionToken, verifyPassword,
 } from '@/src/server/core.mjs';
-import { publicUrl } from '@/src/server/http.mjs';
 import { COOKIE_NAME } from '@/src/server/session.mjs';
+
+function wantsJson(request: Request): boolean {
+  const accept = request.headers.get('accept') ?? '';
+  return accept.includes('application/json');
+}
+
+function fail(request: Request, message: string, status = 400) {
+  if (wantsJson(request)) {
+    return NextResponse.json({ error: message }, { status });
+  }
+  const url = new URL('/login', request.url);
+  url.searchParams.set('error', message);
+  return NextResponse.redirect(url, 303);
+}
 
 export async function POST(request: Request) {
   try {
     try { guardMutation(request, `login:${requestIp(request)}`, 20); }
-    catch { return NextResponse.json({ error: 'Solicitação inválida.' }, { status: 403 }); }
+    catch { return fail(request, 'Solicitação inválida.', 403); }
+
     try { await ensureSafeDatabaseRole(); }
     catch (error) {
       console.error(JSON.stringify({
         event: 'login.db_role_rejected',
         message: error instanceof Error ? error.message : String(error),
       }));
-      return NextResponse.json({
-        error: 'Banco da app recusado. DATABASE_URL deve ser a role controle_seller_app (não a URL admin).',
-      }, { status: 500 });
+      return fail(
+        request,
+        'Banco da app recusado. DATABASE_URL deve ser a role controle_seller_app (não a URL admin).',
+        500,
+      );
     }
+
     let raw: Buffer;
     try { raw = await readLimitedBody(request, 8_192); }
-    catch { return NextResponse.json({ error: 'Solicitação acima do limite.' }, { status: 413 }); }
+    catch { return fail(request, 'Solicitação acima do limite.', 413); }
+
     const contentType = request.headers.get('content-type') ?? '';
     let input: unknown;
     try {
@@ -31,13 +49,15 @@ export async function POST(request: Request) {
         ? JSON.parse(raw.toString('utf8'))
         : Object.fromEntries(new URLSearchParams(raw.toString('utf8')));
     } catch {
-      return NextResponse.json({ error: 'Credenciais inválidas.' }, { status: 400 });
+      return fail(request, 'Credenciais inválidas.');
     }
+
     const parsed = loginSchema.safeParse(input);
-    if (!parsed.success) return NextResponse.json({ error: 'Credenciais inválidas.' }, { status: 400 });
+    if (!parsed.success) return fail(request, 'Credenciais inválidas.');
+
     const ipHash = createHash('sha256').update(requestIp(request)).digest();
     const identifierHash = createHash('sha256').update(parsed.data.email).digest();
-    const attempt = await databasePool().query<{ attempts:number; blocked:boolean }>(
+    const attempt = await databasePool().query<{ attempts: number; blocked: boolean }>(
       `INSERT INTO seller.login_attempts(ip_hash,identifier_hash,attempts,window_started_at,blocked_until,updated_at)
        VALUES($1,$2,1,now(),NULL,now())
        ON CONFLICT (ip_hash,identifier_hash) DO UPDATE SET
@@ -54,14 +74,18 @@ export async function POST(request: Request) {
     );
     const state = attempt.rows[0]!;
     await new Promise(resolve => setTimeout(resolve, Math.min(2_000, Math.max(0, state.attempts - 1) * 150)));
-    if (state.blocked) return NextResponse.json({ error: 'Muitas tentativas. Aguarde antes de tentar novamente.' }, { status: 429 });
+    if (state.blocked) {
+      return fail(request, 'Muitas tentativas. Aguarde antes de tentar novamente.', 429);
+    }
+
     const result = await databasePool().query<{
       id: string; password_hash: string; must_change_password: boolean;
     }>('SELECT id, password_hash, must_change_password FROM seller.users WHERE email = $1 AND disabled_at IS NULL', [parsed.data.email]);
     const user = result.rows[0];
     if (!user || !(await verifyPassword(parsed.data.password, user.password_hash))) {
-      return NextResponse.json({ error: 'E-mail ou senha inválidos.' }, { status: 401 });
+      return fail(request, 'E-mail ou senha inválidos.', 401);
     }
+
     const token = sessionToken();
     const ttl = Math.max(1, Number(process.env.SESSION_TTL_HOURS ?? 168));
     await databasePool().query(
@@ -73,12 +97,9 @@ export async function POST(request: Request) {
       'DELETE FROM seller.login_attempts WHERE ip_hash=$1 AND identifier_hash=$2',
       [ipHash, identifierHash],
     );
-    // Redirect relativo na mesma origem do request — evita perder cookie quando
-    // APP_PUBLIC_URL difere do host que o usuário abriu no EasyPanel.
+
     const nextPath = user.must_change_password ? '/trocar-senha' : '/empresas';
     const response = NextResponse.redirect(new URL(nextPath, request.url), 303);
-    // Mantém publicUrl só para validar config em produção (sem quebrar o redirect).
-    try { publicUrl(nextPath, request); } catch { /* APP_PUBLIC_URL ausente: login ainda funciona */ }
     const forwardedProto = request.headers.get('x-forwarded-proto');
     const secure = process.env.NODE_ENV === 'production'
       && (forwardedProto ? forwardedProto.split(',')[0]?.trim() === 'https' : true);
@@ -91,6 +112,6 @@ export async function POST(request: Request) {
       event: 'login.unhandled',
       message: error instanceof Error ? error.message : String(error),
     }));
-    return NextResponse.json({ error: 'Falha interna no login. Tente novamente.' }, { status: 500 });
+    return fail(request, 'Falha interna no login. Tente novamente.', 500);
   }
 }
