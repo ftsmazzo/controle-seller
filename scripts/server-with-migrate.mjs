@@ -1,7 +1,9 @@
 /**
  * Wrapper do server.js do Next standalone.
  * package.json tem "type": "module", então este entrypoint precisa ser ESM.
- * O EasyPanel força `node server.js` — a migration roda aqui antes do Next.
+ * O EasyPanel força `node server.js` — tenta migrate e SEMPRE sobe o app.
+ * A role controle_seller_app não tem DDL; sem DATABASE_ADMIN_URL o migrate
+ * pode falhar e isso não pode derrubar o login.
  */
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -20,18 +22,17 @@ if (!skip) {
   });
   if (result.status !== 0) {
     console.error(JSON.stringify({
-      event: 'migrate.failed',
+      event: 'migrate.failed_continue',
       source: 'server-with-migrate',
       status: result.status,
-      error: result.error ? String(result.error) : undefined,
+      message: 'Migrate falhou; app sobe mesmo assim. Sem DATABASE_ADMIN_URL a role da app não aplica DDL.',
     }));
-    process.exit(result.status ?? 1);
+  } else {
+    console.log(JSON.stringify({ event: 'migrate.done', source: 'server-with-migrate' }));
   }
-  console.log(JSON.stringify({ event: 'migrate.done', source: 'server-with-migrate' }));
 } else {
   console.log(JSON.stringify({ event: 'migrate.skipped', source: 'server-with-migrate' }));
 }
 
-// O server gerado pelo Next standalone é CommonJS.
 const require = createRequire(import.meta.url);
 require(path.join(root, 'server.next.js'));

@@ -70,7 +70,13 @@ function runMigrationsFromWorker() {
     stdio: 'inherit',
   });
   if (result.status !== 0) {
-    throw new Error(`Migration via worker falhou com status ${result.status ?? 'unknown'}`);
+    console.warn(JSON.stringify({
+      event: 'migrate.failed_continue',
+      source: 'worker',
+      status: result.status,
+      message: 'Migrate falhou; worker segue sem DDL. Previsão funciona sem tabelas 008.',
+    }));
+    return;
   }
   console.info(JSON.stringify({ event: 'migrate.done', source: 'worker' }));
 }

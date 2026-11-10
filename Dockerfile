@@ -41,7 +41,7 @@ COPY --chown=app:app scripts ./scripts
 COPY --chown=app:app migrations ./migrations
 USER root
 # CACHE_BUST força o EasyPanel a reconstruir esta camada (evita server.js CJS antigo).
-ARG CACHE_BUST=2026-03-10-esm-wrapper
+ARG CACHE_BUST=2026-03-10-soft-migrate
 RUN echo "cache_bust=${CACHE_BUST}" \
   && test -f /app/scripts/server-with-migrate.mjs \
   && mv /app/server.js /app/server.next.js \
