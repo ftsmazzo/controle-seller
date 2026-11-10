@@ -227,10 +227,13 @@ async function pumpForecastJobs() {
     }
   } catch (error) {
     if (isMissingForecastSchema(error)) {
-      console.warn(JSON.stringify({
-        event: 'forecast.schema_missing',
-        message: 'Migration 008 ainda não aplicada; forecast adiado.',
-      }));
+      if (!forecastSchemaMissingLogged) {
+        forecastSchemaMissingLogged = true;
+        console.warn(JSON.stringify({
+          event: 'forecast.schema_missing',
+          message: 'Migration 008 ainda não aplicada; forecast adiado até o migrate concluir.',
+        }));
+      }
       return;
     }
     throw error;
@@ -251,6 +254,7 @@ async function ensureForecastQueues() {
 }
 
 async function main() {
+  runMigrationsFromWorker();
   await assertSafeWorkerRole();
   await boss.start();
   try {
