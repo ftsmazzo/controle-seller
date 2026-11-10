@@ -26,7 +26,7 @@ USER node
 CMD ["npm", "run", "migrate"]
 
 # Imagem única usada pelo EasyPanel (app + worker no mesmo artefato).
-# Mesmo com comando forçado `node server.js`, o wrapper aplica migrations.
+# Mesmo com comando forçado `node server.js`, o wrapper ESM aplica migrations.
 FROM node:22-alpine AS app
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
@@ -41,7 +41,7 @@ COPY --chown=app:app scripts ./scripts
 COPY --chown=app:app migrations ./migrations
 USER root
 RUN mv /app/server.js /app/server.next.js \
-  && cp /app/scripts/server-with-migrate.cjs /app/server.js \
+  && cp /app/scripts/server-with-migrate.mjs /app/server.js \
   && cp /app/scripts/docker-entrypoint.sh /app/docker-entrypoint.sh \
   && chmod +x /app/docker-entrypoint.sh \
   && chown app:app /app/server.js /app/server.next.js /app/docker-entrypoint.sh

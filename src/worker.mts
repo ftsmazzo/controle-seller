@@ -1,3 +1,7 @@
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PgBoss } from 'pg-boss';
 import { Pool } from 'pg';
 import { processNuvemshopJob, safeError } from './integrations/nuvemshop-store.mjs';
@@ -34,6 +38,42 @@ let heartbeat: NodeJS.Timeout | undefined;
 let recoveryTimer: NodeJS.Timeout | undefined;
 let metaTimer: NodeJS.Timeout | undefined;
 let forecastTimer: NodeJS.Timeout | undefined;
+let forecastSchemaMissingLogged = false;
+
+function runMigrationsFromWorker() {
+  if (process.env.SKIP_MIGRATIONS === '1') {
+    console.info(JSON.stringify({ event: 'migrate.skipped', source: 'worker' }));
+    return;
+  }
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const migrateScript = path.join(root, 'scripts', 'migrate.mts');
+  if (!existsSync(migrateScript)) {
+    console.warn(JSON.stringify({
+      event: 'migrate.skipped',
+      source: 'worker',
+      reason: 'scripts/migrate.mts ausente nesta imagem',
+    }));
+    return;
+  }
+  if (!process.env.DATABASE_ADMIN_URL && !process.env.DATABASE_URL) {
+    console.warn(JSON.stringify({
+      event: 'migrate.skipped',
+      source: 'worker',
+      reason: 'DATABASE_ADMIN_URL/DATABASE_URL ausente',
+    }));
+    return;
+  }
+  console.info(JSON.stringify({ event: 'migrate.start', source: 'worker' }));
+  const result = spawnSync(process.execPath, ['--import', 'tsx', migrateScript], {
+    cwd: root,
+    env: process.env,
+    stdio: 'inherit',
+  });
+  if (result.status !== 0) {
+    throw new Error(`Migration via worker falhou com status ${result.status ?? 'unknown'}`);
+  }
+  console.info(JSON.stringify({ event: 'migrate.done', source: 'worker' }));
+}
 
 async function beat() {
   await workerPool.query(
