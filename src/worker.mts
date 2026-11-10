@@ -196,9 +196,31 @@ async function pumpForecastJobs() {
     throw error;
   }
 }
+async function ensureForecastQueues() {
+  await boss.createQueue('forecast.dead-letter');
+  await boss.createQueue('forecast.compute', {
+    policy: 'key_strict_fifo',
+    retryLimit: 5,
+    retryBackoff: true,
+    deadLetter: 'forecast.dead-letter',
+  });
+  await workerPool.query(
+    `UPDATE pgboss.queue SET policy='key_strict_fifo',updated_on=now()
+     WHERE name='forecast.compute' AND policy<>'key_strict_fifo'`,
+  ).catch(() => undefined);
+}
+
 async function main() {
   await assertSafeWorkerRole();
   await boss.start();
+  try {
+    await ensureForecastQueues();
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: 'forecast.queue_ensure_failed',
+      message: safeError(error),
+    }));
+  }
   await boss.work<Record<string, unknown>>('sync.generic', { batchSize: 1 }, async jobs => {
     for (const job of jobs) {
       console.info(JSON.stringify({ event: 'job.received', id: job.id, name: job.name }));

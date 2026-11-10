@@ -48,13 +48,13 @@ Rotação de chave: adicione a nova versão ao JSON, troque a versão ativa e re
 - `GET /api/health/db`: conexão de banco pronta.
 - `GET /api/health/worker`: ao menos um heartbeat nos últimos 60 segundos.
 
-No Docker/EasyPanel, a imagem `runtime` do app aplica as migrations no start
-(`scripts/docker-entrypoint.sh` → `npm run migrate` → `node server.js`).
-Basta **Implantar o app**; não é necessário painel/serviço migrate separado.
-O worker continua com comando `npm run worker`. Informe `DATABASE_ADMIN_URL`
-(ou um `DATABASE_URL` com DDL) nas variáveis do app para o migrate rodar.
-Para pular migrations em emergência: `SKIP_MIGRATIONS=1`. Faça backup do
-PostgreSQL antes de deploys com DDL e restaure em ambiente separado regularmente.
+No Docker/EasyPanel, o `server.js` da imagem do app é um wrapper que roda
+`npm run migrate` e só então inicia o Next (`server.next.js`). Assim o
+**Implantar do app** aplica DDL mesmo quando o EasyPanel força
+`node server.js`. O worker usa `npm run worker` e cria as filas
+`forecast.*` se ainda não existirem. Informe `DATABASE_ADMIN_URL` (ou
+`DATABASE_URL` com DDL) nas variáveis do app. Emergência: `SKIP_MIGRATIONS=1`.
+Faça backup do PostgreSQL antes de deploys com DDL.
 
 As migrations são cumulativas e têm checksum: nunca edite uma já aplicada; crie uma nova. Logs não devem conter cookies, senhas, payloads OAuth ou chaves.
 
