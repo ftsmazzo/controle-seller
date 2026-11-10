@@ -37,9 +37,8 @@ USER node
 CMD ["npm", "run", "migrate"]
 
 # Imagem operacional única: o EasyPanel reutiliza o mesmo artefato para
-# app e worker. O serviço app usa o CMD abaixo; o worker sobrescreve o
-# comando com `npm run worker`. Scripts de migration ficam disponíveis
-# somente para o bootstrap controlado do primeiro deploy.
+# app e worker. O serviço app roda migrations no start e sobe o Next.js.
+# O worker sobrescreve o comando com `npm run worker` (sem este entrypoint).
 FROM app AS runtime
 USER root
 COPY --from=deps --chown=app:app /app/node_modules ./node_modules
@@ -47,5 +46,7 @@ COPY --chown=app:app package.json tsconfig.json ./
 COPY --chown=app:app src ./src
 COPY --chown=app:app scripts ./scripts
 COPY --chown=app:app migrations ./migrations
+COPY --chown=app:app scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 USER app
-CMD ["node", "server.js"]
+CMD ["/app/docker-entrypoint.sh"]
