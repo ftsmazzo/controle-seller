@@ -28,7 +28,9 @@ export class ForbiddenError extends Error {
 const mutationWindows = new Map<string, { count: number; resetAt: number }>();
 export function guardMutation(request: Request, key: string, limit = 30): void {
   const origin = request.headers.get('origin');
-  const host = request.headers.get('host');
+  const forwarded = request.headers.get('x-forwarded-host');
+  const hostHeader = forwarded ?? request.headers.get('host');
+  const host = hostHeader?.split(',')[0]?.trim();
   if (!origin || !host || new URL(origin).host !== host) {
     throw new ForbiddenError('Origem da solicitação inválida.');
   }

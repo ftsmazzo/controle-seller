@@ -137,43 +137,63 @@ async function pumpCostRecalculations() {
     );
   }
 }
+function isMissingForecastSchema(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as { code?: unknown }).code ?? '') : '';
+  const message = error instanceof Error ? error.message : String(error);
+  return code === '42883'
+    || code === '42P01'
+    || /pending_forecast_jobs|forecast_weekly_candidates|forecast_job_outbox|forecast_runs/i.test(message);
+}
+
 async function pumpForecastJobs() {
-  const pending = await workerPool.query<{
-    tenant_id: string; outbox_id: string; horizon_days: number;
-  }>(`SELECT * FROM seller.pending_forecast_jobs(50)`);
-  for (const row of pending.rows) {
-    const horizon = (row.horizon_days === 60 || row.horizon_days === 90 ? row.horizon_days : 30) as 30 | 60 | 90;
-    const id = await boss.send('forecast.compute', {
-      tenantId: row.tenant_id,
-      horizonDays: horizon,
-      outboxId: row.outbox_id,
-    } satisfies ForecastJob, {
-      singletonKey: row.tenant_id,
-      retryLimit: 5,
-      retryBackoff: true,
-      expireInSeconds: 20 * 60,
-      deadLetter: 'forecast.dead-letter',
-    });
-    if (!id) throw new Error(`Fila recusou forecast do tenant ${row.tenant_id}.`);
-    await workerPool.query(
-      `SELECT seller.mark_forecast_job_enqueued($1,$2)`,
-      [row.tenant_id, row.outbox_id],
+  try {
+    const pending = await workerPool.query<{
+      tenant_id: string; outbox_id: string; horizon_days: number;
+    }>(`SELECT * FROM seller.pending_forecast_jobs(50)`);
+    for (const row of pending.rows) {
+      const horizon = (row.horizon_days === 60 || row.horizon_days === 90 ? row.horizon_days : 30) as 30 | 60 | 90;
+      const id = await boss.send('forecast.compute', {
+        tenantId: row.tenant_id,
+        horizonDays: horizon,
+        outboxId: row.outbox_id,
+      } satisfies ForecastJob, {
+        singletonKey: row.tenant_id,
+        retryLimit: 5,
+        retryBackoff: true,
+        expireInSeconds: 20 * 60,
+        deadLetter: 'forecast.dead-letter',
+      });
+      if (!id) throw new Error(`Fila recusou forecast do tenant ${row.tenant_id}.`);
+      await workerPool.query(
+        `SELECT seller.mark_forecast_job_enqueued($1,$2)`,
+        [row.tenant_id, row.outbox_id],
+      );
+    }
+    const weekly = await workerPool.query<{ tenant_id: string }>(
+      `SELECT * FROM seller.forecast_weekly_candidates(50)`,
     );
-  }
-  const weekly = await workerPool.query<{ tenant_id: string }>(
-    `SELECT * FROM seller.forecast_weekly_candidates(50)`,
-  );
-  for (const row of weekly.rows) {
-    await boss.send('forecast.compute', {
-      tenantId: row.tenant_id,
-      horizonDays: 30,
-    } satisfies ForecastJob, {
-      singletonKey: row.tenant_id,
-      retryLimit: 5,
-      retryBackoff: true,
-      expireInSeconds: 20 * 60,
-      deadLetter: 'forecast.dead-letter',
-    });
+    for (const row of weekly.rows) {
+      await boss.send('forecast.compute', {
+        tenantId: row.tenant_id,
+        horizonDays: 30,
+      } satisfies ForecastJob, {
+        singletonKey: row.tenant_id,
+        retryLimit: 5,
+        retryBackoff: true,
+        expireInSeconds: 20 * 60,
+        deadLetter: 'forecast.dead-letter',
+      });
+    }
+  } catch (error) {
+    if (isMissingForecastSchema(error)) {
+      console.warn(JSON.stringify({
+        event: 'forecast.schema_missing',
+        message: 'Migration 008 ainda não aplicada; forecast adiado.',
+      }));
+      return;
+    }
+    throw error;
   }
 }
 async function main() {
@@ -315,64 +335,74 @@ async function main() {
       }
     }
   });
-  await boss.work<ForecastJob>('forecast.compute', { batchSize: 1, pollingIntervalSeconds: 5 }, async jobs => {
-    for (const job of jobs) {
-      const client = await workerPool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query(
-          `SELECT set_config('app.tenant_id',$1,true), set_config('app.user_id','',true)`,
-          [job.data.tenantId],
-        );
-        await computeForecastOnClient(client, job.data.tenantId, {
-          horizon: job.data.horizonDays,
-          scenario: 'baseline',
-        });
-        if (job.data.outboxId) {
+  try {
+    await boss.work<ForecastJob>('forecast.compute', { batchSize: 1, pollingIntervalSeconds: 5 }, async jobs => {
+      for (const job of jobs) {
+        const client = await workerPool.connect();
+        try {
+          await client.query('BEGIN');
           await client.query(
-            `UPDATE seller.forecast_job_outbox SET processed_at=now()
-             WHERE tenant_id=$1 AND id=$2`,
-            [job.data.tenantId, job.data.outboxId],
+            `SELECT set_config('app.tenant_id',$1,true), set_config('app.user_id','',true)`,
+            [job.data.tenantId],
           );
+          await computeForecastOnClient(client, job.data.tenantId, {
+            horizon: job.data.horizonDays,
+            scenario: 'baseline',
+          });
+          if (job.data.outboxId) {
+            await client.query(
+              `UPDATE seller.forecast_job_outbox SET processed_at=now()
+               WHERE tenant_id=$1 AND id=$2`,
+              [job.data.tenantId, job.data.outboxId],
+            );
+          }
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
         }
-        await client.query('COMMIT');
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-      } finally {
-        client.release();
       }
-    }
-  });
-  await boss.work<ForecastJob>('forecast.dead-letter', { batchSize: 1 }, async jobs => {
-    for (const job of jobs) {
-      const client = await workerPool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query(`SELECT set_config('app.tenant_id',$1,true)`, [job.data.tenantId]);
-        await client.query(
-          `INSERT INTO seller.dead_letters(tenant_id,kind,payload,error)
-           VALUES($1,'forecast.compute',$2,$3)`,
-          [job.data.tenantId, job.data, 'Tentativas do forecast esgotadas.'],
-        );
-        await client.query('COMMIT');
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-      } finally {
-        client.release();
+    });
+    await boss.work<ForecastJob>('forecast.dead-letter', { batchSize: 1 }, async jobs => {
+      for (const job of jobs) {
+        const client = await workerPool.connect();
+        try {
+          await client.query('BEGIN');
+          await client.query(`SELECT set_config('app.tenant_id',$1,true)`, [job.data.tenantId]);
+          await client.query(
+            `INSERT INTO seller.dead_letters(tenant_id,kind,payload,error)
+             VALUES($1,'forecast.compute',$2,$3)`,
+            [job.data.tenantId, job.data, 'Tentativas do forecast esgotadas.'],
+          );
+          await client.query('COMMIT');
+        } catch (error) {
+          await client.query('ROLLBACK');
+          throw error;
+        } finally {
+          client.release();
+        }
       }
-    }
-  });
+    });
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: 'forecast.queue_unavailable',
+      message: safeError(error),
+    }));
+  }
   await beat();
   heartbeat = setInterval(() => void beat().catch(error => console.error('heartbeat', error)), intervalMs);
   await pumpNuvemshopRecovery();
   await pumpMetaDaily();
   await pumpCostRecalculations();
-  await pumpForecastJobs();
+  await pumpForecastJobs().catch(error => console.error('forecast.pump', safeError(error)));
   recoveryTimer = setInterval(
-    () => void Promise.all([pumpNuvemshopRecovery(),pumpCostRecalculations(),pumpForecastJobs()])
-      .catch(error => console.error('worker.recovery', safeError(error))),
+    () => void Promise.all([
+      pumpNuvemshopRecovery(),
+      pumpCostRecalculations(),
+      pumpForecastJobs().catch(error => console.error('forecast.pump', safeError(error))),
+    ]).catch(error => console.error('worker.recovery', safeError(error))),
     30_000,
   );
   metaTimer = setInterval(

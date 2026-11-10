@@ -24,25 +24,43 @@ export function AuthForm({ kind }: { kind: Kind }) {
       }
       setLoading(true);
       const body = new URLSearchParams();
-      for (const [key,value] of data) {
-        if (typeof value === 'string') body.append(key,value);
+      for (const [key, value] of data) {
+        if (typeof value === 'string') body.append(key, value);
       }
       const response = await fetch(form.action, {
         method: 'POST',
         body,
         credentials: 'same-origin',
+        redirect: 'manual',
+        headers: { Accept: 'application/json' },
       });
+
+      // 303/302 com Set-Cookie: navegamos manualmente para aplicar a sessão.
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('Location') || (kind === 'login' ? '/empresas' : '/');
+        window.location.assign(location);
+        return;
+      }
+      if (response.type === 'opaqueredirect' || response.status === 0) {
+        window.location.assign(kind === 'login' ? '/empresas' : '/');
+        return;
+      }
       if (response.redirected) {
         window.location.assign(response.url);
         return;
       }
-      const payload = await response.json().catch(() => ({ error: 'Não foi possível concluir a solicitação.' })) as {
+
+      const payload = await response.json().catch(() => ({
+        error: response.ok
+          ? 'Não foi possível concluir a solicitação.'
+          : `Falha no acesso (${response.status}).`,
+      })) as {
         error?: string | { formErrors?: string[] };
       };
       const message = typeof payload.error === 'string'
         ? payload.error
         : payload.error?.formErrors?.[0];
-      setError(message ?? 'Não foi possível concluir a solicitação.');
+      setError(message ?? `Falha no acesso (${response.status}).`);
     } catch {
       setError('Falha de conexão. Tente novamente.');
     } finally {
@@ -58,7 +76,7 @@ export function AuthForm({ kind }: { kind: Kind }) {
     <p className="muted">{login
       ? 'Use o e-mail cadastrado pelo administrador.'
       : 'Use 12 ou mais caracteres, com maiúscula, minúscula e número.'}</p>
-    {error && <p id="auth-error" ref={alertRef} role="alert" tabIndex={-1}>{error}</p>}
+    {error && <p id="auth-error" className="error" ref={alertRef} role="alert" tabIndex={-1}>{error}</p>}
     {login && <label className="field">E-mail
       <input type="email" name="email" autoComplete="email" required disabled={loading}
         aria-invalid={Boolean(error)} aria-describedby={error ? 'auth-error' : undefined} />

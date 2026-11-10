@@ -41,13 +41,27 @@ function mapCachedForecast(cached: NonNullable<Awaited<ReturnType<typeof readLat
 
 export default async function PrevisoesPage() {
   const session = await requireReadySession();
-  const cached = await readLatestForecast(session.activeTenantId, session.userId, 30);
-  const initial = cached
-    ? mapCachedForecast(cached)
-    : await computeTenantForecast(session.activeTenantId, session.userId, {
-      horizon: 30,
-      scenario: 'baseline',
-    });
+  let initial: Awaited<ReturnType<typeof computeTenantForecast>> | ReturnType<typeof mapCachedForecast>;
+  try {
+    const cached = await readLatestForecast(session.activeTenantId, session.userId, 30);
+    initial = cached
+      ? mapCachedForecast(cached)
+      : await computeTenantForecast(session.activeTenantId, session.userId, {
+        horizon: 30,
+        scenario: 'baseline',
+      });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const missingSchema = /daily_store_metrics|forecast_runs|does not exist|008/i.test(message);
+    initial = {
+      status: 'insufficient_history',
+      trainDays: 0,
+      message: missingSchema
+        ? 'A migration 008 ainda não foi aplicada neste ambiente. Rode o job migrate no EasyPanel e tente novamente.'
+        : message,
+      history: [],
+    };
+  }
 
   return (
     <div className="decision-page">
