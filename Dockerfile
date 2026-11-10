@@ -40,8 +40,14 @@ COPY --chown=app:app src ./src
 COPY --chown=app:app scripts ./scripts
 COPY --chown=app:app migrations ./migrations
 USER root
-RUN mv /app/server.js /app/server.next.js \
+# CACHE_BUST força o EasyPanel a reconstruir esta camada (evita server.js CJS antigo).
+ARG CACHE_BUST=2026-03-10-esm-wrapper
+RUN echo "cache_bust=${CACHE_BUST}" \
+  && test -f /app/scripts/server-with-migrate.mjs \
+  && mv /app/server.js /app/server.next.js \
   && cp /app/scripts/server-with-migrate.mjs /app/server.js \
+  && grep -q "import { spawnSync }" /app/server.js \
+  && grep -qv "require('node:child_process')" /app/server.js \
   && cp /app/scripts/docker-entrypoint.sh /app/docker-entrypoint.sh \
   && chmod +x /app/docker-entrypoint.sh \
   && chown app:app /app/server.js /app/server.next.js /app/docker-entrypoint.sh
